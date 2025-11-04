@@ -10,6 +10,12 @@ The workflow addresses limitations of the previous approach by explicitly modeli
 
 ---
 
+## Developer TODOs
+* Check to see if model accurately captured simulated effects.
+* Validate spatial model selection on representative sites.
+* Check out RMSE values - LSM is high?
+* Check out uncertainty calibration diagnostics.
+
 ## Previous Approach ("Sally’s Original Code")
 
 ### Summary

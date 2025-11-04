@@ -138,20 +138,32 @@ list("Chosen covariance per environment" = cov_tab,
 **Goal,** per-environment LS-mean 95% CIs should cover the true effect at ≈95%.
 
 ```{r coverage}
-cov_df <- s1 %>%
-  select(env, entry, estimate, stderr) %>%
-  inner_join(truth, by = "entry") %>%
-  mutate(
-    lo = estimate - 1.96 * stderr,
-    hi = estimate + 1.96 * stderr,
-    covered = effect >= lo & effect <= hi
+# Center each environment’s LS-means and compare to entry effects
+s1_centered <- s1 |>
+  dplyr::group_by(env) |>
+  dplyr::mutate(estimate_c = estimate - mean(estimate, na.rm = TRUE)) |>
+  dplyr::ungroup()
+
+cov_df <- s1_centered |>
+  dplyr::select(env, entry, estimate_c, stderr) |>
+  dplyr::inner_join(truth, by = "entry") |>
+  dplyr::mutate(
+    lo = estimate_c - 1.96 * stderr,
+    hi = estimate_c + 1.96 * stderr,
+    covered = (effect >= lo) & (effect <= hi)
   )
 
-coverage_rate <- mean(cov_df$covered)
-coverage_rate
+mean(cov_df$covered, na.rm = TRUE)
 ```
 
 **Interpretation,** coverage near 0.95 suggests interval calibration is reasonable. Substantially lower coverage may indicate residual underestimation or misspecified spatial form.
+
+```{r}
+offset <- mean(lsm_ac$estimate, na.rm = TRUE) - mean(truth$effect, na.rm = TRUE)
+with(merge(truth, lsm_ac, by="entry"),
+     cor(effect + offset, estimate))  # should be very high
+```
+
 
 ---
 
@@ -160,19 +172,54 @@ coverage_rate
 **Goal,** the CLD letters summarize Tukey’s multiple comparisons. Entries sharing a letter are **not** significantly different.
 
 ```{r cld-merge, fig.height=5}
-plot_df <- lsm_ac %>%
-  inner_join(cld, by = "entry") %>%
-  arrange(desc(estimate)) %>%
-  mutate(entry = factor(entry, levels = entry))
+# Ensure CLD has a 'group' column
+if ("group" %in% names(cld)) {
+  cld_fix <- cld
+} else if (".group" %in% names(cld)) {
+  cld_fix <- dplyr::rename(cld, group = .group)
+} else {
+  stop("CLD table must contain a 'group' or '.group' column.")
+}
 
-ggplot(plot_df, aes(x = entry, y = estimate)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
-  geom_text(aes(label = group, y = upper.CL), vjust = -0.6, size = 3) +
-  coord_flip() +
-  labs(title = "Across-environment LS-means with Tukey CLD",
-       x = "Entry", y = "Adjusted mean") +
-  theme_bw()
+# Standardize CI column names in case they have trailing dots
+fix_ci_names <- function(df){
+  nm <- names(df)
+  nm <- sub("^lower\\.CL\\.$","lower.CL", nm)
+  nm <- sub("^upper\\.CL\\.$","upper.CL", nm)
+  names(df) <- nm
+  df
+}
+lsm_ac <- fix_ci_names(lsm_ac)
+
+# Normalize entry labels: "entry12" -> "12"
+cld_fix <- cld_fix |>
+  dplyr::mutate(entry = sub("^entry", "", as.character(entry)))
+
+# Coerce to character on the other side too
+lsm_ac <- lsm_ac |>
+  dplyr::mutate(entry = as.character(entry))
+
+plot_df <- lsm_ac |>
+  dplyr::select(entry, estimate, lower.CL, upper.CL) |>
+  dplyr::inner_join(cld_fix, by = "entry") |>
+  dplyr::mutate(entry_num = as.numeric(entry)) |>
+  dplyr::arrange(desc(estimate)) |>
+  dplyr::mutate(entry = factor(entry, levels = entry))
+
+# If you prefer numeric ordering on the axis, use:
+# plot_df <- plot_df |>
+#   dplyr::arrange(entry_num) |>
+#   dplyr::mutate(entry = factor(entry, levels = unique(entry)))
+
+p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = entry, y = estimate)) +
+  ggplot2::geom_point() +
+  ggplot2::geom_errorbar(ggplot2::aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
+  ggplot2::geom_text(ggplot2::aes(label = group, y = upper.CL), vjust = -0.6, size = 3) +
+  ggplot2::coord_flip() +
+  ggplot2::labs(title = "Across-environment LS-means with Tukey CLD",
+                x = "Entry", y = "Adjusted mean") +
+  ggplot2::theme_bw()
+print(p)
 ```
 
 **Interpretation,** large overlaps in CIs and shared letters indicate similar performance. You may also apply an agronomic threshold (e.g., ≥ 3 bu/ac) as a practical relevance filter in addition to statistical significance.
