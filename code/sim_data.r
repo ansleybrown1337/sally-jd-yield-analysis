@@ -30,7 +30,7 @@ cfg <- list(
   # harvesting only central sub-plot? (kept here for future; grid still full)
   # output control
   make_csv    = TRUE,
-  out_csv     = "trial_sim.csv"
+  out_csv     = "data/trial_sim.csv"
 )
 
 # ---- Helpers ----
@@ -194,11 +194,11 @@ if (isTRUE(cfg$make_csv)) {
 
 # Save truth tables for validation (optional)
 truth_entry <- attr(trial, "entry_truth")
-write.csv(truth_entry, "entry_truth.csv", row.names = FALSE)
+write.csv(truth_entry, "data/entry_truth.csv", row.names = FALSE)
 
 drops <- attr(trial, "drops_by_env")
 # write a simple log
-con <- file("env_missing_entries.log", open = "wt")
+con <- file("data/env_missing_entries.log", open = "wt")
 on.exit(close(con), add = TRUE)
 for (nm in names(drops)) {
   cat(nm, ": dropped entries -> ",

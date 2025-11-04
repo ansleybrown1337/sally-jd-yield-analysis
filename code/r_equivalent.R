@@ -150,29 +150,49 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
 # ---- Stage 2B: inverse-variance meta with Tukey letters ----
 
 stage2_meta <- function(lsm_stage1, alpha = 0.05) {
-  # weighted linear mixed model: estimate ~ entry + (1|env), weights = 1/var
-  lsm_stage1 <- lsm_stage1 %>% mutate(entry = factor(entry), env = factor(env))
-  w <- 1 / lsm_stage1$var_lsmean
-  # Use nlme lme for weights + random env
-  fit <- lme(estimate ~ entry, random = ~ 1 | env, weights = ~ w, data = lsm_stage1, method = "REML")
-  emm <- emmeans(fit, ~ entry)
-  lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
-    rename(estimate = emmean, stderr = SE) %>%
-    select(entry, estimate, stderr, df, lower.CL, upper.CL)
+  lsm_stage1 <- lsm_stage1 %>%
+    dplyr::mutate(entry = factor(entry), env = factor(env))
   
-  # Tukey-adjusted pairwise
+  # Inverse-variance meta: tell nlme the known variances via varFixed(~ var_lsmean)
+  fit <- nlme::lme(
+    estimate ~ entry,
+    random   = ~ 1 | env,
+    weights  = nlme::varFixed(~ var_lsmean),
+    data     = lsm_stage1,
+    method   = "REML"
+  )
+  
+  emm <- emmeans::emmeans(fit, ~ entry)
+  
+  # LS-means across environments
+  lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
+    dplyr::rename(estimate = emmean, stderr = SE) %>%
+    dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
+  
+  # Tukey-adjusted pairwise comparisons
   pairs_tukey <- as.data.frame(summary(pairs(emm, adjust = "tukey")))
-  # letters
-  tukey_p <- as.matrix(pairs_tukey %>% select(contrast, p.value))
-  # build a symmetric p-value matrix for multcompView
-  # emmeans provides a helper: multcomp::cld, but we can use cld() directly
-  cld_tab <- multcomp::cld(emm, alpha = alpha, Letters = letters, adjust = "tukey") %>%
-    as.data.frame() %>%
-    select(entry, .group) %>%
-    rename(group = .group)
+  
+  # ----- Build compact-letter display WITHOUT emmeans::CLD -----
+  # multcompView::multcompLetters expects a named vector of p-values
+  # with names like "A-B". We’ll parse emmeans' "contrast" column.
+  pv <- pairs_tukey$p.value
+  names(pv) <- gsub(" ", "", pairs_tukey$contrast)  # e.g., "E1 - E2" -> "E1-E2"
+  
+  # Compute letters at the chosen alpha
+  let <- multcompView::multcompLetters(pv, threshold = alpha)
+  
+  cld_tab <- data.frame(
+    entry = names(let$Letters),
+    group = unname(let$Letters),
+    row.names = NULL,
+    check.names = FALSE
+  )
   
   list(lsm_across = lsm_tab, diffs_across = pairs_tukey, cld = cld_tab)
 }
+
+
+
 
 # ---- Stage 2A: one-stage MET BLUPs (entries random) ----
 # Random: entry and entry:env, random env and rep(env), spatial residual per env.
@@ -182,47 +202,71 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
 # Below we fit a conventional MET BLUP without spatial residual, which is standard and robust.
 
 stage2_blups <- function(trial_df) {
-  df <- trial_df %>% mutate(entry = factor(entry),
-                            env = factor(env),
-                            rep = factor(rep))
-  # random = entry + entry:env + rep%in%env + env
-  # Fit using lme4::lmer for speed; we’ll use nlme::lme to avoid an extra dependency
-  fit <- nlme::lme(yield ~ 1,
-                   random = ~ 1 | env/rep,
-                   data = df,
-                   method = "REML")
-  # Add random entry and entry:env via a second stage using lme4 would be preferable,
-  # but nlme cannot nest crossed random effects easily. Use lme4 if allowed:
-  # lmer(yield ~ 1 + (1|env) + (1|env:rep) + (1|entry) + (1|entry:env), data=df)
-  # Here, if lme4 is acceptable in your environment, uncomment:
-  #
-  # library(lme4)
-  # fit <- lmer(yield ~ 1 + (1|env) + (1|env:rep) + (1|entry) + (1|entry:env), data = df)
-  #
-  # Extract BLUPs for entries (overall)
-  # Using lme4:
-  # blups <- ranef(fit, condVar = TRUE)$entry
-  # With nlme fallback, we approximate overall entry effects using a simple EBLUP from a separate model:
-  library(lme4)
-  fit2 <- lmer(yield ~ 1 + (1|env) + (1|env:rep) + (1|entry) + (1|entry:env), data = df, REML = TRUE)
+  # Fully crossed MET BLUPs using lme4
+  suppressPackageStartupMessages(library(lme4))
+  df <- trial_df %>%
+    dplyr::mutate(
+      env   = factor(env),
+      rep   = factor(rep),
+      entry = factor(entry)
+    )
+  
+  fit2 <- lmer(
+    yield ~ 1 +
+      (1 | env) +
+      (1 | env:rep) +
+      (1 | entry) +
+      (1 | entry:env),
+    data = df,
+    REML = TRUE,
+    control = lmerControl(check.nobs.vs.nRE = "ignore")
+  )
+  
+  # Extract random effects and conditional variances
   re <- ranef(fit2, condVar = TRUE)
-  entry_blup <- tibble(entry = rownames(re$entry),
-                       BLUP = as.numeric(re$entry[,1]))
-  # SEs from condVar
-  se <- sapply(re$entry@postVar, function(m) sqrt(m[1,1,]))
-  entry_blup$SE <- as.numeric(se)
-  entry_blup
+  
+  # BLUPs for 'entry' are in a one-column data frame '(Intercept)' with rownames = levels(entry)
+  re_entry <- re$entry
+  blups_vec <- as.numeric(re_entry[,"(Intercept)"])
+  entry_ids <- rownames(re_entry)
+  
+  # SEs from 1x1xN "postVar" array attached to re$entry
+  pv <- attr(re$entry, "postVar")
+  se_vec <- if (is.null(pv)) rep(NA_real_, length(blups_vec))
+  else sqrt(vapply(seq_len(dim(pv)[3]), function(i) pv[1,1,i], numeric(1)))
+  
+  out <- data.frame(
+    entry = entry_ids,
+    BLUP  = blups_vec,
+    SE    = se_vec,
+    row.names = NULL,
+    check.names = FALSE
+  )
+  
+  # If you want to include the overall intercept to get predicted overall means:
+  # overall <- fixef(fit2)[["(Intercept)"]]
+  # out$PredictedMean <- overall + out$BLUP
+  
+  out
 }
+
+
 
 # ---- main harness ----
 
-analyze_trial <- function(in_csv = "trial.csv",
-                          out_stage1 = "lsm_stage1.csv",
-                          out_across = "lsm_across.csv",
-                          out_diffs  = "diffs_across.csv",
-                          out_cld    = "cld_across.csv",
-                          out_blups  = "entry_blups.csv",
-                          alpha = 0.05) {
+analyze_trial <- function(in_csv   = "data/trial_sim.csv",
+                          out_dir  = "output",
+                          alpha    = 0.05) {
+  
+  # ensure output directory exists
+  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+  
+  # build output file paths
+  out_stage1 <- file.path(out_dir, "lsm_stage1.csv")
+  out_across <- file.path(out_dir, "lsm_across.csv")
+  out_diffs  <- file.path(out_dir, "diffs_across.csv")
+  out_cld    <- file.path(out_dir, "cld_across.csv")
+  out_blups  <- file.path(out_dir, "entry_blups.csv")
   
   trial <- read.csv(in_csv, stringsAsFactors = FALSE)
   stopifnot(all(c("site","year","env","rep","row","col","entry","yield") %in% names(trial)))
@@ -235,20 +279,56 @@ analyze_trial <- function(in_csv = "trial.csv",
   # Stage 2B
   s2 <- stage2_meta(lsm_stage1, alpha = alpha)
   write.csv(s2$lsm_across, out_across, row.names = FALSE)
-  write.csv(s2$diffs_across, out_diffs, row.names = FALSE)
-  write.csv(s2$cld, out_cld, row.names = FALSE)
+  write.csv(s2$diffs_across, out_diffs,  row.names = FALSE)
+  write.csv(s2$cld,         out_cld,    row.names = FALSE)
   
   # Stage 2A BLUPs
   blups <- stage2_blups(trial)
   write.csv(blups, out_blups, row.names = FALSE)
   
+  message("Wrote:\n",
+          "  ", normalizePath(out_stage1, mustWork = FALSE), "\n",
+          "  ", normalizePath(out_across, mustWork = FALSE), "\n",
+          "  ", normalizePath(out_diffs,  mustWork = FALSE), "\n",
+          "  ", normalizePath(out_cld,    mustWork = FALSE), "\n",
+          "  ", normalizePath(out_blups,  mustWork = FALSE))
+  
   invisible(list(stage1 = lsm_stage1,
-                 best_cov = s1$best_cov,
+                 best_cov   = s1$best_cov,
                  lsm_across = s2$lsm_across,
                  diffs_across = s2$diffs_across,
                  cld = s2$cld,
                  blups = blups))
 }
 
+
 # ---- run if interactive ----
-# analyze_trial("trial_sim.csv")
+res <- analyze_trial("data/trial_sim.csv")
+
+# ---- graphical output ----
+library(ggplot2)
+
+# Tukey means plot with CLD
+lsm_across <- read.csv("output/lsm_across.csv")
+cld        <- read.csv("output/cld_across.csv")
+
+# Merge letters onto means
+plot_df <- merge(lsm_across, cld, by = "entry", all.x = TRUE)
+plot_df$entry <- factor(plot_df$entry, levels = plot_df$entry[order(plot_df$estimate)])
+
+ggplot(plot_df, aes(x = entry, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
+  geom_text(aes(label = group, y = upper.CL), vjust = -0.5, size = 3) +
+  labs(x = "Entry", y = "Across-env LS-mean", title = "Entry means with Tukey CLD") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+# Example yield heatmap for one environment
+env_ex <- unique(read.csv("data/trial_sim.csv")$env)[1]
+df_env <- subset(read.csv("data/trial_sim.csv"), env == env_ex)
+
+ggplot(df_env, aes(x = col, y = row, fill = yield)) +
+  geom_tile() + scale_y_reverse() +
+  coord_equal() + theme_bw() +
+  labs(title = paste("Yield heatmap:", env_ex))
