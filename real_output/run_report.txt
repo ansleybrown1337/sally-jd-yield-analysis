@@ -1,6 +1,6 @@
 Variety Trial Analysis run report
 --------------------------------
-Timestamp: 2025-11-20 14:49:14 MST
+Timestamp: 2025-11-20 15:27:44 MST
 Input file: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_data\MilletVT2025.csv
 Output directory: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_output
 Data type guess: real_or_external

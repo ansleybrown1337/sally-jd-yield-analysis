@@ -255,15 +255,10 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
 }
 
 # =========================================================
-# Stage 2B: inverse-variance meta with Tukey letters
+# Stage 2B: inverse-variance meta with Tukey letters + LSD
 # =========================================================
 
 stage2_meta <- function(lsm_stage1, alpha = 0.05) {
-  # helper to normalize entry labels like "entry12" -> "12"
-  clean_entry_labels <- function(x) {
-    sub("^entry", "", as.character(x))
-  }
-  
   # Ensure factors
   lsm_stage1 <- lsm_stage1 %>%
     dplyr::mutate(
@@ -285,27 +280,28 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
   n_env <- dplyr::n_distinct(lsm2$env)
   n_ent <- dplyr::n_distinct(lsm2$entry)
   
-  # --------------------------------------------------------
-  # Very small case: fewer than 2 entries with usable LS-means
-  # --------------------------------------------------------
+  # ---------------------------------------------------------
+  # Case: fewer than 2 entries => no pairwise contrasts / CLD
+  # ---------------------------------------------------------
   if (n_ent < 2L) {
     warning(
       "Stage 2 meta-analysis: fewer than 2 entries with usable LS-means. ",
-      "Reporting marginal means without pairwise comparisons or CLD."
+      "Reporting marginal mean without pairwise comparisons, CLD, or LSD."
     )
     
     fit <- lm(estimate ~ 1, data = lsm2, weights = 1 / var_lsmean)
     emm <- emmeans::emmeans(fit, ~ 1)
     base_mean <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha))
     
-    # replicate same mean for each entry
     lsm_tab <- data.frame(
-      entry     = clean_entry_labels(levels(lsm2$entry)),
+      entry     = levels(lsm2$entry),
       estimate  = base_mean$emmean,
       stderr    = base_mean$SE,
       df        = base_mean$df,
       lower.CL  = base_mean$lower.CL,
       upper.CL  = base_mean$upper.CL,
+      LSD_0.05  = NA_real_,
+      LSD_0.30  = NA_real_,
       stringsAsFactors = FALSE
     )
     
@@ -319,15 +315,17 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
     return(list(
       lsm_across   = lsm_tab,
       diffs_across = data.frame(),
-      cld          = cld_tab
+      cld          = cld_tab,
+      lsd_0.05     = NA_real_,
+      lsd_0.30     = NA_real_
     ))
   }
   
-  # --------------------------------------------------------
-  # Fit model for across-env means
-  # --------------------------------------------------------
+  # ---------------------------------------------------------
+  # Fit across-environment model
+  # ---------------------------------------------------------
   if (n_env >= 2L) {
-    # Preferred case: random env effect with known inverse-variance weights
+    # Preferred: random env with variance weights
     fit <- nlme::lme(
       estimate ~ entry,
       random   = ~ 1 | env,
@@ -336,7 +334,7 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
       method   = "REML"
     )
   } else {
-    # Fallback: fewer than 2 environments with usable weights
+    # Fallback: single-env weighted fixed-effects
     warning(
       "Stage 2 meta-analysis: fewer than 2 environments with positive var_lsmean. ",
       "Fitting a weighted fixed-effects model (lm) without random env."
@@ -352,21 +350,56 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
   # emmeans works for both lme and lm
   emm <- emmeans::emmeans(fit, ~ entry)
   
-  # LS-means across environments (or weighted means in the fallback)
-  lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
+  # LS-means table
+  lsm_tab <- as.data.frame(
+    summary(emm, infer = TRUE, level = 1 - alpha)
+  ) %>%
     dplyr::rename(estimate = emmean, stderr = SE) %>%
-    dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL) %>%
-    dplyr::mutate(entry = clean_entry_labels(entry))
+    dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
   
-  # --------------------------------------------------------
-  # Tukey-adjusted pairwise comparisons (if possible)
-  # --------------------------------------------------------
+  # ---------------------------------------------------------
+  # Tukey-adjusted pairwise comparisons (for CLD)
+  # ---------------------------------------------------------
   pairs_tukey <- tryCatch(
     as.data.frame(summary(pairs(emm, adjust = "tukey"))),
     error = function(e) NULL
   )
   
-  # If pairwise contrasts failed or there are no contrasts, give everyone "a"
+  # ---------------------------------------------------------
+  # LSD computation (unadjusted pairwise SEs)
+  # ---------------------------------------------------------
+  lsd_0.05 <- NA_real_
+  lsd_0.30 <- NA_real_
+  
+  pairs_none <- tryCatch(
+    as.data.frame(summary(pairs(emm, adjust = "none"))),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(pairs_none) &&
+      all(c("SE", "df") %in% names(pairs_none))) {
+    
+    valid <- with(pairs_none, !is.na(SE) & !is.na(df) & df > 0)
+    
+    if (any(valid)) {
+      se_eff <- mean(pairs_none$SE[valid])
+      df_eff <- mean(pairs_none$df[valid])
+      
+      lsd_0.05 <- stats::qt(1 - 0.05/2, df_eff) * se_eff
+      lsd_0.30 <- stats::qt(1 - 0.30/2, df_eff) * se_eff
+    }
+  }
+  
+  # Attach LSD columns to LS-means table (replicated per row)
+  lsm_tab <- lsm_tab %>%
+    dplyr::mutate(
+      LSD_0.05 = lsd_0.05,
+      LSD_0.30 = lsd_0.30
+    )
+  
+  # ---------------------------------------------------------
+  # Build CLD (or trivial grouping) from Tukey contrasts
+  # ---------------------------------------------------------
   if (is.null(pairs_tukey) || nrow(pairs_tukey) == 0L) {
     warning(
       "Stage 2 meta-analysis: no valid pairwise contrasts for CLD. ",
@@ -383,17 +416,19 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
     return(list(
       lsm_across   = lsm_tab,
       diffs_across = if (is.null(pairs_tukey)) data.frame() else pairs_tukey,
-      cld          = cld_tab
+      cld          = cld_tab,
+      lsd_0.05     = lsd_0.05,
+      lsd_0.30     = lsd_0.30
     ))
   }
   
-  # Remove NA p-values before calling multcompLetters
+  # Remove NA p-values before multcompLetters
   pv       <- pairs_tukey$p.value
-  name_vec <- gsub(" ", "", pairs_tukey$contrast)  # "entry1 - entry2" -> "entry1-entry2"
+  name_vec <- gsub(" ", "", pairs_tukey$contrast)
   
-  valid    <- !is.na(pv)
-  pv       <- pv[valid]
-  name_vec <- name_vec[valid]
+  valid_p  <- !is.na(pv)
+  pv       <- pv[valid_p]
+  name_vec <- name_vec[valid_p]
   
   if (length(pv) == 0L) {
     warning(
@@ -411,13 +446,14 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
     return(list(
       lsm_across   = lsm_tab,
       diffs_across = pairs_tukey,
-      cld          = cld_tab
+      cld          = cld_tab,
+      lsd_0.05     = lsd_0.05,
+      lsd_0.30     = lsd_0.30
     ))
   }
   
   names(pv) <- name_vec
   
-  # multcompLetters can still occasionally choke; protect with tryCatch
   let <- tryCatch(
     multcompView::multcompLetters(pv, threshold = alpha),
     error = function(e) NULL
@@ -436,10 +472,8 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
       check.names = FALSE
     )
   } else {
-    # Clean off any "entry" prefix here
-    entry_names_clean <- clean_entry_labels(names(let$Letters))
     cld_tab <- data.frame(
-      entry = entry_names_clean,
+      entry = names(let$Letters),
       group = unname(let$Letters),
       row.names   = NULL,
       check.names = FALSE
@@ -449,16 +483,17 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
   list(
     lsm_across   = lsm_tab,
     diffs_across = pairs_tukey,
-    cld          = cld_tab
+    cld          = cld_tab,
+    lsd_0.05     = lsd_0.05,
+    lsd_0.30     = lsd_0.30
   )
 }
 
 # =========================================================
-# Stage 2B (single environment): within-env LS-means + Tukey CLD
+# Stage 2B helper: single-environment LS-means + CLD + LSD
 # =========================================================
 
 stage2_single_env <- function(trial_df, env_id, alpha = 0.05) {
-  # Work only on the chosen environment, drop missing yields
   df_env <- trial_df %>%
     dplyr::filter(env == env_id, !is.na(yield)) %>%
     dplyr::mutate(
@@ -466,63 +501,156 @@ stage2_single_env <- function(trial_df, env_id, alpha = 0.05) {
       rep   = factor(rep)
     )
   
-  n_rep <- dplyr::n_distinct(df_env$rep)
+  if (nrow(df_env) == 0L) {
+    stop("stage2_single_env: no non-missing yields for env = ", env_id)
+  }
   
-  # Prefer a mixed model with random reps if possible
+  # Simple RCBD or one-way model for this env
+  n_rep <- dplyr::n_distinct(df_env$rep)
   if (n_rep >= 2L) {
-    fit <- try(
-      lme4::lmer(
-        yield ~ entry + (1 | rep),
-        data    = df_env,
-        REML    = TRUE,
-        control = lme4::lmerControl(check.nobs.vs.nRE = "ignore")
-      ),
-      silent = TRUE
-    )
-    
-    if (inherits(fit, "try-error")) {
-      warning(
-        "Stage 2 single-env: lmer(yield ~ entry + (1 | rep)) failed for env ",
-        env_id, "; falling back to lm(yield ~ entry)."
-      )
-      fit <- lm(yield ~ entry, data = df_env)
-    }
+    fit <- lme4::lmer(yield ~ entry + (1 | rep),
+                      data = df_env,
+                      REML = TRUE)
   } else {
     warning(
-      "Stage 2 single-env: env ", env_id,
-      " has fewer than 2 reps; using fixed-effects ANOVA lm(yield ~ entry)."
+      "stage2_single_env: env ", env_id,
+      " has fewer than 2 reps; fitting lm(yield ~ entry) only."
     )
     fit <- lm(yield ~ entry, data = df_env)
   }
   
-  # LS-means and CIs within this environment
   emm <- emmeans::emmeans(fit, ~ entry)
-  lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
+  
+  lsm_tab <- as.data.frame(
+    summary(emm, infer = TRUE, level = 1 - alpha)
+  ) %>%
     dplyr::rename(estimate = emmean, stderr = SE) %>%
     dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
   
-  # Tukey-adjusted pairwise comparisons
-  pairs_tukey <- as.data.frame(summary(pairs(emm, adjust = "tukey")))
-  
-  # Compact letter display (CLD)
-  pv <- pairs_tukey$p.value
-  names(pv) <- gsub(" ", "", pairs_tukey$contrast)  # "E1 - E2" -> "E1-E2"
-  
-  let <- multcompView::multcompLetters(pv, threshold = alpha)
-  
-  cld_tab <- data.frame(
-    entry = names(let$Letters),
-    group = unname(let$Letters),
-    row.names   = NULL,
-    check.names = FALSE
+  # Tukey contrasts for CLD
+  pairs_tukey <- tryCatch(
+    as.data.frame(summary(pairs(emm, adjust = "tukey"))),
+    error = function(e) NULL
   )
+  
+  # LSD from unadjusted pairwise SEs
+  lsd_0.05 <- NA_real_
+  lsd_0.30 <- NA_real_
+  
+  pairs_none <- tryCatch(
+    as.data.frame(summary(pairs(emm, adjust = "none"))),
+    error = function(e) NULL
+  )
+  
+  if (!is.null(pairs_none) &&
+      all(c("SE", "df") %in% names(pairs_none))) {
+    
+    valid <- with(pairs_none, !is.na(SE) & !is.na(df) & df > 0)
+    
+    if (any(valid)) {
+      se_eff <- mean(pairs_none$SE[valid])
+      df_eff <- mean(pairs_none$df[valid])
+      
+      lsd_0.05 <- stats::qt(1 - 0.05/2, df_eff) * se_eff
+      lsd_0.30 <- stats::qt(1 - 0.30/2, df_eff) * se_eff
+    }
+  }
+  
+  lsm_tab <- lsm_tab %>%
+    dplyr::mutate(
+      LSD_0.05 = lsd_0.05,
+      LSD_0.30 = lsd_0.30
+    )
+  
+  # CLD construction
+  if (is.null(pairs_tukey) || nrow(pairs_tukey) == 0L) {
+    warning(
+      "stage2_single_env: no valid pairwise contrasts for CLD. ",
+      "Assigning all entries to a single group 'a'."
+    )
+    
+    cld_tab <- data.frame(
+      entry = lsm_tab$entry,
+      group = "a",
+      row.names   = NULL,
+      check.names = FALSE
+    )
+    
+    return(list(
+      lsm_across   = lsm_tab,
+      diffs_across = if (is.null(pairs_tukey)) data.frame() else pairs_tukey,
+      cld          = cld_tab,
+      lsd_0.05     = lsd_0.05,
+      lsd_0.30     = lsd_0.30
+    ))
+  }
+  
+  pv       <- pairs_tukey$p.value
+  name_vec <- gsub(" ", "", pairs_tukey$contrast)
+  
+  valid_p  <- !is.na(pv)
+  pv       <- pv[valid_p]
+  name_vec <- name_vec[valid_p]
+  
+  if (length(pv) == 0L) {
+    warning(
+      "stage2_single_env: all pairwise p-values are NA. ",
+      "Assigning all entries to a single group 'a'."
+    )
+    
+    cld_tab <- data.frame(
+      entry = lsm_tab$entry,
+      group = "a",
+      row.names   = NULL,
+      check.names = FALSE
+    )
+    
+    return(list(
+      lsm_across   = lsm_tab,
+      diffs_across = pairs_tukey,
+      cld          = cld_tab,
+      lsd_0.05     = lsd_0.05,
+      lsd_0.30     = lsd_0.30
+    ))
+  }
+  
+  names(pv) <- name_vec
+  
+  let <- tryCatch(
+    multcompView::multcompLetters(pv, threshold = alpha),
+    error = function(e) NULL
+  )
+  
+  if (is.null(let)) {
+    warning(
+      "stage2_single_env: multcompLetters failed. ",
+      "Assigning all entries to a single group 'a'."
+    )
+    
+    cld_tab <- data.frame(
+      entry = lsm_tab$entry,
+      group = "a",
+      row.names   = NULL,
+      check.names = FALSE
+    )
+  } else {
+    cld_tab <- data.frame(
+      entry = names(let$Letters),
+      group = unname(let$Letters),
+      row.names   = NULL,
+      check.names = FALSE
+    )
+  }
   
   list(
     lsm_across   = lsm_tab,
     diffs_across = pairs_tukey,
-    cld          = cld_tab
+    cld          = cld_tab,
+    lsd_0.05     = lsd_0.05,
+    lsd_0.30     = lsd_0.30
   )
 }
+
 
 # =========================================================
 # Stage 2A: one-stage MET BLUPs (entries random)
@@ -868,7 +996,12 @@ analyze_trial <- function(in_csv   = SIM_IN_CSV,
 # Plotting helpers (unchanged logic, now follow DATA_MODE)
 # =========================================================
 
-make_summary_plots <- function(in_csv, out_dir, mode_label = "sim") {
+make_summary_plots <- function(in_csv,
+                               out_dir,
+                               mode_label = "sim",
+                               show_tukey = TRUE,
+                               show_heatmap = TRUE) {
+  
   # helper
   clean_entry_labels <- function(x) sub("^entry", "", as.character(x))
   
@@ -911,80 +1044,91 @@ make_summary_plots <- function(in_csv, out_dir, mode_label = "sim") {
   
   # Merge LS means with grouping letters and order by mean
   plot_df <- lsm_ac %>%
-    select(entry, estimate, lower.CL, upper.CL) %>%
-    inner_join(cld_fix, by = "entry") %>%
-    mutate(entry = as.character(entry)) %>%
-    arrange(estimate) %>%                   # <-- THIS restores yield ranking
-    mutate(entry = factor(entry, levels = entry))
-  
-  p_tukey <- ggplot2::ggplot(plot_df,
-                             ggplot2::aes(x = entry, y = estimate)) +
-    ggplot2::geom_point() +
-    ggplot2::geom_errorbar(
-      ggplot2::aes(ymin = lower.CL, ymax = upper.CL),
-      width = 0.2
-    ) +
-    ggplot2::geom_text(
-      ggplot2::aes(label = group, y = upper.CL),
-      vjust = -0.6,
-      size = 3
-    ) +
-    ggplot2::labs(
-      title = "Across environment LS means with Tukey CLD",
-      x = "Entry",
-      y = "Adjusted mean yield"
-    ) +
-    ggplot2::theme_bw() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)
-    )
+    dplyr::select(entry, estimate, lower.CL, upper.CL) %>%
+    dplyr::inner_join(cld_fix, by = "entry") %>%
+    dplyr::mutate(entry = as.character(entry)) %>%
+    dplyr::arrange(estimate) %>%                   # sorted by adjusted yield
+    dplyr::mutate(entry = factor(entry, levels = entry))
   
   
-  print(p_tukey)
+  # --------- Conditionally print Tukey plot ----------
+  if (show_tukey) {
+    p_tukey <- ggplot2::ggplot(plot_df,
+                               ggplot2::aes(x = entry, y = estimate)) +
+      ggplot2::geom_point() +
+      ggplot2::geom_errorbar(
+        ggplot2::aes(ymin = lower.CL, ymax = upper.CL),
+        width = 0.2
+      ) +
+      ggplot2::geom_text(
+        ggplot2::aes(label = group, y = upper.CL),
+        vjust = -0.6,
+        size = 3
+      ) +
+      ggplot2::labs(
+        title = "Across environment LS means with Tukey CLD",
+        x = "Entry",
+        y = "Adjusted mean yield"
+      ) +
+      ggplot2::theme_bw() +
+      ggplot2::theme(
+        axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1)
+      )
+    
+    print(p_tukey)
+  } else {
+    p_tukey <- NULL
+  }
+  
   
   # --------- 2. Heatmap (unchanged) ----------
-  trial <- read.csv(in_csv, stringsAsFactors = FALSE)
-  
-  trial <- trial %>%
-    dplyr::mutate(
-      row_num = as.numeric(row),
-      col_num = as.numeric(col),
-      env     = as.factor(env)
-    )
-  
-  env_levels <- levels(trial$env)
-  if (length(env_levels) == 0L) {
-    warning("Heatmap: no environments found in trial data, skipping heatmap.")
-    return(invisible(list(tukey_plot = p_tukey, heatmap = NULL)))
+  if (show_heatmap) {
+    trial <- read.csv(in_csv, stringsAsFactors = FALSE)
+    
+    trial <- trial %>%
+      dplyr::mutate(
+        row_num = as.numeric(row),
+        col_num = as.numeric(col),
+        env     = as.factor(env)
+      )
+    
+    env_levels <- levels(trial$env)
+    if (length(env_levels) == 0L) {
+      warning("Heatmap: no environments found in trial data, skipping heatmap.")
+      return(invisible(list(tukey_plot = p_tukey, heatmap = NULL)))
+    }
+    env_ex <- env_levels[1]
+    
+    df_env <- trial %>%
+      dplyr::filter(env == env_ex, !is.na(yield)) %>%
+      dplyr::filter(!is.na(row_num), !is.na(col_num))
+    
+    if (nrow(df_env) == 0L) {
+      warning("Heatmap: no rows with non missing yield and numeric row or column for env ",
+              env_ex, ", skipping heatmap.")
+      return(invisible(list(tukey_plot = p_tukey, heatmap = NULL)))
+    }
+    
+    p_heat <- ggplot2::ggplot(df_env,
+                              ggplot2::aes(x = col_num, y = row_num, fill = yield)) +
+      ggplot2::geom_tile() +
+      ggplot2::scale_y_reverse() +
+      ggplot2::coord_equal() +
+      ggplot2::theme_bw() +
+      ggplot2::labs(
+        title = paste("Yield heatmap:", env_ex, "(", mode_label, "data)"),
+        x = "Column",
+        y = "Row"
+      )
+    
+    print(p_heat)
+  } else {
+    p_heat <- NULL
   }
-  env_ex <- env_levels[1]
-  
-  df_env <- trial %>%
-    dplyr::filter(env == env_ex, !is.na(yield)) %>%
-    dplyr::filter(!is.na(row_num), !is.na(col_num))
-  
-  if (nrow(df_env) == 0L) {
-    warning("Heatmap: no rows with non missing yield and numeric row or column for env ",
-            env_ex, ", skipping heatmap.")
-    return(invisible(list(tukey_plot = p_tukey, heatmap = NULL)))
-  }
-  
-  p_heat <- ggplot2::ggplot(df_env,
-                            ggplot2::aes(x = col_num, y = row_num, fill = yield)) +
-    ggplot2::geom_tile() +
-    ggplot2::scale_y_reverse() +
-    ggplot2::coord_equal() +
-    ggplot2::theme_bw() +
-    ggplot2::labs(
-      title = paste("Yield heatmap:", env_ex, "(", mode_label, "data)"),
-      x = "Column",
-      y = "Row"
-    )
-  
-  print(p_heat)
   
   invisible(list(tukey_plot = p_tukey, heatmap = p_heat))
 }
+
 
 # =========================================================
 # Run block using DATA_MODE switch (interactive only)
@@ -1002,5 +1146,5 @@ if (interactive()) {
   }
   
   res <- analyze_trial(in_csv = in_csv, out_dir = out_dir)
-  make_summary_plots(in_csv = in_csv, out_dir = out_dir, mode_label = DATA_MODE)
+  make_summary_plots(in_csv = in_csv, out_dir = out_dir, mode_label = DATA_MODE, show_tukey = TRUE)
 }
