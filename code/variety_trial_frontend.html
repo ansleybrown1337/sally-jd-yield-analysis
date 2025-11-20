@@ -600,6 +600,22 @@ entry performance</a></li>
 and summary plots</a></li>
 <li><a href="#backend-run-report" id="toc-backend-run-report">8. Backend
 run report</a></li>
+<li><a href="#description-of-outputs" id="toc-description-of-outputs">9.
+Description of Outputs</a>
+<ul>
+<li><a href="#lsm_stage1.csv" id="toc-lsm_stage1.csv">1.
+<code>lsm_stage1.csv</code></a></li>
+<li><a href="#lsm_across.csv" id="toc-lsm_across.csv">2.
+<code>lsm_across.csv</code></a></li>
+<li><a href="#diffs_across.csv" id="toc-diffs_across.csv">3.
+<code>diffs_across.csv</code></a></li>
+<li><a href="#cld_across.csv" id="toc-cld_across.csv">4.
+<code>cld_across.csv</code></a></li>
+<li><a href="#entry_blups.csv" id="toc-entry_blups.csv">5.
+<code>entry_blups.csv</code></a></li>
+<li><a href="#run_report.txt" id="toc-run_report.txt">6.
+<code>run_report.txt</code></a></li>
+</ul></li>
 </ul>
 </div>
 
@@ -1976,7 +1992,7 @@ reproduced below verbatim for full transparency.</p>
 <pre><code>## ```text
 ## Variety Trial Analysis run report
 ## --------------------------------
-## Timestamp: 2025-11-20 14:45:06 MST
+## Timestamp: 2025-11-20 14:49:14 MST
 ## Input file: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_data\MilletVT2025.csv
 ## Output directory: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_output
 ## Data type guess: real_or_external
@@ -2015,22 +2031,116 @@ reproduced below verbatim for full transparency.</p>
 ##   • BLUPs treat entry as random and, when possible, include env and env:rep random effects; if mixed models fail to converge, the code falls back to lm(yield ~ entry) and uses emmeans to summarize entry effects.
 ##   • Confidence intervals and p-values follow standard approximations from nlme/lme4/emmeans and may be unstable when degrees of freedom are small or designs are highly unbalanced.
 ## ```</code></pre>
-<p>This report records:</p>
+</div>
+<div id="description-of-outputs" class="section level1">
+<h1>9. Description of Outputs</h1>
+<p>The backend generates a standardized set of analysis files in the
+specified output directory. These files document the fitted models,
+adjusted means, significance groupings, and random-effect predictions
+used throughout this report.</p>
+<div id="lsm_stage1.csv" class="section level3">
+<h3>1. <code>lsm_stage1.csv</code></h3>
+<p>This file contains the <strong>per-environment least-squares
+means</strong> and their standard errors after the Stage-1 spatial
+analysis. Each row corresponds to a specific combination of environment
+and entry. Columns include:</p>
 <ul>
-<li>The timestamp, input file, and output directory.<br />
-</li>
-<li>Environment‑level summaries and which covariance / fallback model
-was chosen in each one.<br />
-</li>
-<li>Whether Stage 2B ran as a multi‑environment meta‑analysis or as a
-single‑environment LS‑means analysis.<br />
-</li>
-<li>How the BLUP model was specified and what fallbacks were used, if
-any.</li>
+<li><code>env</code>: environment identifier</li>
+<li><code>entry</code>: entry identifier</li>
+<li><code>estimate</code>: environment-specific adjusted mean</li>
+<li><code>stderr</code>: standard error of the estimate</li>
+<li><code>cov</code>: selected spatial covariance model for that
+environment</li>
+<li>additional columns describing the covariance fit, if applicable</li>
 </ul>
-<p>Together with the tables and figures above, this should provide a
-complete, transparent record of what the backend did for the trial and
-how to interpret the results.</p>
+<p>This file reflects only within-environment information and is used as
+the foundation for Stage-2 summarization.</p>
+</div>
+<div id="lsm_across.csv" class="section level3">
+<h3>2. <code>lsm_across.csv</code></h3>
+<p>This file contains the <strong>across-environment adjusted
+means</strong> for each entry. The estimates are obtained either
+from:</p>
+<ul>
+<li>an inverse-variance meta-analytic model across environments, when
+multiple environments exist, or</li>
+<li>a within-environment model if only one environment is present.</li>
+</ul>
+<p>Columns include:</p>
+<ul>
+<li><code>entry</code>: entry identifier</li>
+<li><code>estimate</code>: overall adjusted mean across
+environments</li>
+<li><code>lower.CL</code>, <code>upper.CL</code>: confidence limits,
+when computable</li>
+<li>additional model-based summaries depending on the data
+structure</li>
+</ul>
+<p>These are the primary estimates used for ranking and graphical
+display in the report.</p>
+</div>
+<div id="diffs_across.csv" class="section level3">
+<h3>3. <code>diffs_across.csv</code></h3>
+<p>This file contains <strong>pairwise comparisons</strong> among
+entries based on Tukey adjustment. Columns include:</p>
+<ul>
+<li><code>contrast</code>: entry pair (A minus B)</li>
+<li><code>estimate</code>: estimated difference</li>
+<li><code>SE</code>: standard error of the difference</li>
+<li><code>df</code>: degrees of freedom (if available)</li>
+<li><code>t.ratio</code>, <code>p.value</code>: test statistics and
+adjusted significance</li>
+</ul>
+<p>This file is useful for examining which entries differ significantly
+and for inspecting comparisons that do not appear in the compact letter
+display.</p>
+</div>
+<div id="cld_across.csv" class="section level3">
+<h3>4. <code>cld_across.csv</code></h3>
+<p>This file holds the <strong>compact letter display</strong>, a
+concise encoding of the Tukey groupings. Each entry receives a string of
+letters. Entries sharing at least one letter are not significantly
+different at the chosen alpha level.</p>
+<p>Columns:</p>
+<ul>
+<li><code>entry</code>: entry identifier</li>
+<li><code>group</code>: the assigned grouping letters</li>
+</ul>
+<p>These letters are used directly in the Tukey summary figure.</p>
+</div>
+<div id="entry_blups.csv" class="section level3">
+<h3>5. <code>entry_blups.csv</code></h3>
+<p>This file contains <strong>BLUPs</strong>, the Best Linear Unbiased
+Predictions of entry performance under the mixed-effects MET model.
+BLUPs incorporate random environment, random replication effects, and
+entry-by-environment interaction when present.</p>
+<p>Columns include:</p>
+<ul>
+<li><code>entry</code>: entry identifier</li>
+<li><code>BLUP</code>: predicted random effect for the entry</li>
+<li><code>SE</code>: standard error of the prediction</li>
+</ul>
+<p>BLUPs provide a stabilized estimate of underlying performance,
+especially when data are unbalanced or sparse.</p>
+</div>
+<div id="run_report.txt" class="section level3">
+<h3>6. <code>run_report.txt</code></h3>
+<p>This plain-text file documents the modeling decisions made during
+execution. It includes:</p>
+<ul>
+<li>the input file used</li>
+<li>the number of environments and the number of usable plots</li>
+<li>which covariance structures were selected in Stage-1</li>
+<li>fallback behavior (for example, RCBD or fixed-effects
+replacements)</li>
+<li>the Stage-2 modeling mode (meta-analysis or within-environment)</li>
+<li>BLUP model structure and any singular-fit warnings</li>
+<li>assumptions and notes on missing data, replication, and confidence
+intervals</li>
+</ul>
+<p>This file serves as an audit trail so that the user can verify
+exactly how the backend operated on the dataset.</p>
+</div>
 </div>
 
 

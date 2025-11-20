@@ -294,11 +294,86 @@ if (length(run_report)) {
 }
 ```
 
-This report records:
+# 9. Description of Outputs
 
-- The timestamp, input file, and output directory.  
-- Environment‑level summaries and which covariance / fallback model was chosen in each one.  
-- Whether Stage 2B ran as a multi‑environment meta‑analysis or as a single‑environment LS‑means analysis.  
-- How the BLUP model was specified and what fallbacks were used, if any.
+The backend generates a standardized set of analysis files in the specified output directory. These files document the fitted models, adjusted means, significance groupings, and random-effect predictions used throughout this report.
 
-Together with the tables and figures above, this should provide a complete, transparent record of what the backend did for the trial and how to interpret the results.
+### 1. `lsm_stage1.csv`
+
+This file contains the **per-environment least-squares means** and their standard errors after the Stage-1 spatial analysis. Each row corresponds to a specific combination of environment and entry. Columns include:
+
+* `env`: environment identifier
+* `entry`: entry identifier
+* `estimate`: environment-specific adjusted mean
+* `stderr`: standard error of the estimate
+* `cov`: selected spatial covariance model for that environment
+* additional columns describing the covariance fit, if applicable
+
+This file reflects only within-environment information and is used as the foundation for Stage-2 summarization.
+
+### 2. `lsm_across.csv`
+
+This file contains the **across-environment adjusted means** for each entry. The estimates are obtained either from:
+
+* an inverse-variance meta-analytic model across environments, when multiple environments exist, or
+* a within-environment model if only one environment is present.
+
+Columns include:
+
+* `entry`: entry identifier
+* `estimate`: overall adjusted mean across environments
+* `lower.CL`, `upper.CL`: confidence limits, when computable
+* additional model-based summaries depending on the data structure
+
+These are the primary estimates used for ranking and graphical display in the report.
+
+### 3. `diffs_across.csv`
+
+This file contains **pairwise comparisons** among entries based on Tukey adjustment. Columns include:
+
+* `contrast`: entry pair (A minus B)
+* `estimate`: estimated difference
+* `SE`: standard error of the difference
+* `df`: degrees of freedom (if available)
+* `t.ratio`, `p.value`: test statistics and adjusted significance
+
+This file is useful for examining which entries differ significantly and for inspecting comparisons that do not appear in the compact letter display.
+
+### 4. `cld_across.csv`
+
+This file holds the **compact letter display**, a concise encoding of the Tukey groupings. Each entry receives a string of letters. Entries sharing at least one letter are not significantly different at the chosen alpha level.
+
+Columns:
+
+* `entry`: entry identifier
+* `group`: the assigned grouping letters
+
+These letters are used directly in the Tukey summary figure.
+
+### 5. `entry_blups.csv`
+
+This file contains **BLUPs**, the Best Linear Unbiased Predictions of entry performance under the mixed-effects MET model. BLUPs incorporate random environment, random replication effects, and entry-by-environment interaction when present.
+
+Columns include:
+
+* `entry`: entry identifier
+* `BLUP`: predicted random effect for the entry
+* `SE`: standard error of the prediction
+
+BLUPs provide a stabilized estimate of underlying performance, especially when data are unbalanced or sparse.
+
+### 6. `run_report.txt`
+
+This plain-text file documents the modeling decisions made during execution. It includes:
+
+* the input file used
+* the number of environments and the number of usable plots
+* which covariance structures were selected in Stage-1
+* fallback behavior (for example, RCBD or fixed-effects replacements)
+* the Stage-2 modeling mode (meta-analysis or within-environment)
+* BLUP model structure and any singular-fit warnings
+* assumptions and notes on missing data, replication, and confidence intervals
+
+This file serves as an audit trail so that the user can verify exactly how the backend operated on the dataset.
+
+
