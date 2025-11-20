@@ -10,7 +10,15 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align = "center", fig.width = 8, fig.height = 5)
+knitr::opts_chunk$set(
+  echo       = FALSE,
+  message    = FALSE,
+  warning    = FALSE,
+  fig.align  = "center",
+  fig.width  = 8,
+  fig.height = 5
+)
+
 suppressPackageStartupMessages({
   library(dplyr)
   library(ggplot2)
@@ -19,98 +27,135 @@ suppressPackageStartupMessages({
   library(purrr)
   library(stringr)
   library(gridExtra)
+  library(tibble)
 })
 ```
 
 # Purpose
 
-This document validates that the new spatial + multi-environment (MET) workflow estimates what we intend and quantifies how well it performs.
+This document validates that the new spatial + multi-environment (MET) workflow estimates what we intend and quantifies how well it performs, using the simulated variety-trial data.
 
 **We check:**
+
 1. Recovery of entry effects and ranks versus known simulation truth.  
-2. Stage-1 spatial model selection behavior.  
+2. Stage‑1 spatial model selection behavior.  
 3. Uncertainty calibration and practical interpretability (CIs, Tukey letters).  
 4. Optional diagnostics on variance components and residual structure.
 
 ---
 
-# Data Inputs
+# Data inputs and file structure
 
-This validation expects the following files:
+This validation assumes the Rmd file lives in the project’s `code/` folder and the backend has been run with `DATA_MODE = "sim"` so that all simulated outputs are available.
 
-- `data/trial_sim.csv`: simulated plots with columns `site, year, env, rep, row, col, entry, yield`.
-- `data/entry_truth.csv`: known entry main effects used to simulate data.
-- `output/lsm_stage1.csv`: per-environment LS-means and SEs after spatial modeling.
-- `output/lsm_across.csv`: inverse-variance weighted LS-means across environments.
-- `output/diffs_across.csv`: Tukey-adjusted pairwise comparisons across environments.
-- `output/cld_across.csv`: compact letter display (“grouping letters”) across environments.
-- `output/entry_blups.csv`: BLUPs of entry effects from the MET model (optional).
+Expected files (relative to the project root):
+
+- `sim_data/trial_sim.csv`: simulated plots with columns `site, year, env, rep, row, col, entry, yield`.  
+- `sim_data/entry_truth.csv`: known entry main effects used to simulate data.  
+- `sim_output/lsm_stage1.csv`: per‑environment LS‑means and SEs after spatial + fallback modeling.  
+- `sim_output/lsm_across.csv`: across‑environment LS‑means (MET stage‑2).  
+- `sim_output/diffs_across.csv`: Tukey‑adjusted pairwise comparisons across environments.  
+- `sim_output/cld_across.csv`: compact letter display (“grouping letters”) across environments.  
+- `sim_output/entry_blups.csv`: BLUPs of entry effects from the MET model.  
+- `sim_output/run_report.txt`: textual summary of modeling choices and assumptions.
 
 ```{r load-data}
-setwd("C:/Users/ansleybr/Documents/GitHub/sally-jd-yield-analysis")
-# Load required files, stop with a clear message if missing
-need <- c("data/trial_sim.csv", "data/entry_truth.csv",
-          "output/lsm_stage1.csv", "output/lsm_across.csv",
-          "output/diffs_across.csv", "output/cld_across.csv",
-          "output/entry_blups.csv")
+# Paths are relative to the project *root*, assuming this Rmd is in ./code
+trial_path   <- "../sim_data/trial_sim.csv"
+truth_path   <- "../sim_data/entry_truth.csv"
+s1_path      <- "../sim_output/lsm_stage1.csv"
+lsm_ac_path  <- "../sim_output/lsm_across.csv"
+diffs_path   <- "../sim_output/diffs_across.csv"
+cld_path     <- "../sim_output/cld_across.csv"
+blups_path   <- "../sim_output/entry_blups.csv"
+report_path  <- "../sim_output/run_report.txt"
+
+need <- c(trial_path, truth_path,
+          s1_path, lsm_ac_path,
+          diffs_path, cld_path,
+          blups_path)
 
 missing <- need[!file.exists(need)]
 if (length(missing) > 0) {
-  stop(paste("Missing files:\n", paste(missing, collapse = "\n"),
-             "\nRun the simulator and analyze_trial() first."))
+  stop(
+    paste(
+      "Missing files:",
+      paste(missing, collapse = "\n  "),
+      "\nRun the simulator and analyze_trial() with DATA_MODE = 'sim' before knitting this validation report."
+    )
+  )
 }
 
-trial   <- readr::read_csv("data/trial_sim.csv", show_col_types = FALSE)
-truth   <- readr::read_csv("data/entry_truth.csv", show_col_types = FALSE)
-s1      <- readr::read_csv("output/lsm_stage1.csv", show_col_types = FALSE)
-lsm_ac  <- readr::read_csv("output/lsm_across.csv", show_col_types = FALSE)
-diffs   <- readr::read_csv("output/diffs_across.csv", show_col_types = FALSE)
-cld     <- readr::read_csv("output/cld_across.csv", show_col_types = FALSE)
-blups   <- readr::read_csv("output/entry_blups.csv", show_col_types = FALSE)
+trial   <- readr::read_csv(trial_path,  show_col_types = FALSE)
+truth   <- readr::read_csv(truth_path,  show_col_types = FALSE)
+s1      <- readr::read_csv(s1_path,     show_col_types = FALSE)
+lsm_ac  <- readr::read_csv(lsm_ac_path, show_col_types = FALSE)
+diffs   <- readr::read_csv(diffs_path,  show_col_types = FALSE)
+cld     <- readr::read_csv(cld_path,    show_col_types = FALSE)
+blups   <- readr::read_csv(blups_path,  show_col_types = FALSE)
 
-# Normalize entry types
-truth <- truth %>% mutate(entry = as.character(entry))
+# Normalize entry labels to character everywhere
+truth  <- truth %>% mutate(entry = as.character(entry))
 lsm_ac <- lsm_ac %>% mutate(entry = as.character(entry))
 blups  <- blups  %>% mutate(entry = as.character(entry))
 s1     <- s1     %>% mutate(entry = as.character(entry))
+
+# Optional: load run_report if present
+run_report <- if (file.exists(report_path)) {
+  readLines(report_path, warn = FALSE)
+} else {
+  NULL
+}
 ```
 
 ---
 
-# 1. Recovery of Entry Effects and Ranks
+# 1. Recovery of entry effects and ranks
 
-**Goal,** across environments, entries’ adjusted means and BLUPs should track the true entry effects used in simulation.
+**Goal.** Across environments, entries’ adjusted means and BLUPs should track the true entry effects used in simulation.
 
-**Metrics reported:** Spearman rank correlation (ranking fidelity) and RMSE (numerical accuracy).
+**Metrics reported.** Spearman rank correlation (ranking fidelity) and RMSE (numerical accuracy).
 
 ```{r recovery-metrics}
 cmp_lsm  <- truth %>% inner_join(lsm_ac,  by = "entry")
 cmp_blup <- truth %>% inner_join(blups,   by = "entry")
 
-metr <- tibble::tibble(
+metr <- tibble(
   source   = c("Across-env LS-means", "BLUPs"),
-  rank_cor = c(cor(cmp_lsm$effect, cmp_lsm$estimate, method = "spearman"),
-               cor(cmp_blup$effect, cmp_blup$BLUP,   method = "spearman")),
-  rmse     = c(sqrt(mean((cmp_lsm$estimate - cmp_lsm$effect)^2)),
-               sqrt(mean((cmp_blup$BLUP     - cmp_blup$effect)^2)))
+  rank_cor = c(
+    cor(cmp_lsm$effect, cmp_lsm$estimate, method = "spearman"),
+    cor(cmp_blup$effect, cmp_blup$BLUP,   method = "spearman")
+  ),
+  rmse     = c(
+    sqrt(mean((cmp_lsm$estimate - cmp_lsm$effect)^2)),
+    sqrt(mean((cmp_blup$BLUP     - cmp_blup$effect)^2))
+  )
 )
 
 metr
 ```
 
-**Interpretation,** higher rank correlation indicates better retention of order, lower RMSE indicates closer numerical recovery. BLUPs typically stabilize ranks under unbalance.
+Higher rank correlation indicates better retention of ordering among entries, while lower RMSE indicates closer numerical recovery. In many MET settings, BLUPs stabilize ranks under unbalanced or noisy data, so it is informative to compare both summaries.
 
 ```{r scatter-plots, fig.height=4.5}
 p1 <- ggplot(cmp_lsm, aes(x = effect, y = estimate)) +
-  geom_point() + geom_smooth(method = "lm", se = FALSE) +
-  labs(title = "Truth vs Across-environment LS-means",
-       x = "True entry effect", y = "LS-mean estimate") +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Truth vs across-environment LS-means",
+    x = "True entry effect",
+    y = "LS-mean estimate"
+  ) +
   theme_bw()
 
 p2 <- ggplot(cmp_blup, aes(x = effect, y = BLUP)) +
-  geom_point() + geom_smooth(method = "lm", se = FALSE) +
-  labs(title = "Truth vs Entry BLUPs",
-       x = "True entry effect", y = "BLUP") +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Truth vs entry BLUPs",
+    x = "True entry effect",
+    y = "BLUP"
+  ) +
   theme_bw()
 
 gridExtra::grid.arrange(p1, p2, nrow = 1)
@@ -118,61 +163,72 @@ gridExtra::grid.arrange(p1, p2, nrow = 1)
 
 ---
 
-# 2. Stage-1 Spatial Model Selection
+# 2. Stage‑1 spatial model selection
 
-**Goal,** AICc chooses plausible covariance families per environment.
+**Goal.** Confirm that, per environment, AICc selects plausible covariance families and that fallbacks are triggered only when needed.
 
 ```{r stage1-cov-summary}
-cov_tab <- s1 %>% count(env, cov) %>% arrange(env, desc(n))
-cov_freq <- s1 %>% count(cov) %>% mutate(prop = n / sum(n))
-list("Chosen covariance per environment" = cov_tab,
-     "Overall frequency" = cov_freq)
+cov_tab <- s1 %>%
+  count(env, cov) %>%
+  arrange(env, desc(n))
+
+cov_freq <- s1 %>%
+  count(cov) %>%
+  mutate(prop = n / sum(n))
+
+list(
+  "Chosen covariance per environment" = cov_tab,
+  "Overall covariance frequency"      = cov_freq
+)
 ```
 
-**Interpretation,** under anisotropic simulation you should often see `expa` selected. If your simulator used isotropic structure, `exp/sph/gau` may be competitive. Consistency across environments indicates stable spatial behavior.
+Under anisotropic simulation, `expa` is often selected. If the simulator uses isotropic structure, `exp`, `sph`, or `gau` may be competitive. The table also reveals when environments fell back to `none_rcbd` or `none_lm` due to failed spatial fits or limited replication.
 
 ---
 
-# 3. Uncertainty Calibration
+# 3. Uncertainty calibration
 
-**Goal,** per-environment LS-mean 95% CIs should cover the true effect at ≈95%.
+**Goal.** Per‑environment LS‑mean 95% confidence intervals should cover the true effect at approximately 95%.
 
 ```{r coverage}
 # Center each environment’s LS-means and compare to entry effects
-s1_centered <- s1 |>
-  dplyr::group_by(env) |>
-  dplyr::mutate(estimate_c = estimate - mean(estimate, na.rm = TRUE)) |>
-  dplyr::ungroup()
+s1_centered <- s1 %>%
+  group_by(env) %>%
+  mutate(estimate_c = estimate - mean(estimate, na.rm = TRUE)) %>%
+  ungroup()
 
-cov_df <- s1_centered |>
-  dplyr::select(env, entry, estimate_c, stderr) |>
-  dplyr::inner_join(truth, by = "entry") |>
-  dplyr::mutate(
-    lo = estimate_c - 1.96 * stderr,
-    hi = estimate_c + 1.96 * stderr,
-    covered = (effect >= lo) & (effect <= hi)
+cov_df <- s1_centered %>%
+  select(env, entry, estimate_c, stderr) %>%
+  inner_join(truth, by = "entry") %>%
+  mutate(
+    lo       = estimate_c - 1.96 * stderr,
+    hi       = estimate_c + 1.96 * stderr,
+    covered  = (effect >= lo) & (effect <= hi)
   )
 
 mean(cov_df$covered, na.rm = TRUE)
 ```
 
-**Interpretation,** coverage near 0.95 suggests interval calibration is reasonable. Substantially lower coverage may indicate residual underestimation or misspecified spatial form.
+Coverage near 0.95 suggests that interval estimates are reasonably calibrated. Substantially lower coverage may indicate residual variance underestimation or a misspecified spatial structure.
 
-```{r}
-offset <- mean(lsm_ac$estimate, na.rm = TRUE) - mean(truth$effect, na.rm = TRUE)
-with(merge(truth, lsm_ac, by="entry"),
-     cor(effect + offset, estimate))  # should be very high
+As an additional rank‑based check, we can compare truth to the across‑env LS‑means after aligning their overall location.
+
+```{r coverage-rank-check}
+offset <- mean(lsm_ac$estimate, na.rm = TRUE) -
+  mean(truth$effect, na.rm = TRUE)
+
+with(dplyr::inner_join(truth, lsm_ac, by = "entry"),
+     cor(effect + offset, estimate))
 ```
-
 
 ---
 
-# 4. Practical Separation: Tukey Letters and Pairwise Differences
+# 4. Practical separation: Tukey letters and pairwise differences
 
-**Goal,** the CLD letters summarize Tukey’s multiple comparisons. Entries sharing a letter are **not** significantly different.
+**Goal.** Summarize Tukey’s multiple comparisons using compact letter displays (CLD). Entries sharing a letter are **not** significantly different at the chosen alpha.
 
 ```{r cld-merge, fig.height=5}
-# Ensure CLD has a 'group' column
+# Ensure CLD has a 'group' column (can arrive as .group)
 if ("group" %in% names(cld)) {
   cld_fix <- cld
 } else if (".group" %in% names(cld)) {
@@ -184,97 +240,121 @@ if ("group" %in% names(cld)) {
 # Standardize CI column names in case they have trailing dots
 fix_ci_names <- function(df){
   nm <- names(df)
-  nm <- sub("^lower\\.CL\\.$","lower.CL", nm)
-  nm <- sub("^upper\\.CL\\.$","upper.CL", nm)
+  nm <- sub("^lower\\.CL\\.$", "lower.CL", nm)
+  nm <- sub("^upper\\.CL\\.$", "upper.CL", nm)
   names(df) <- nm
   df
 }
 lsm_ac <- fix_ci_names(lsm_ac)
 
-# Normalize entry labels: "entry12" -> "12"
-cld_fix <- cld_fix |>
-  dplyr::mutate(entry = sub("^entry", "", as.character(entry)))
+# Normalize entry labels (handles cases like 'entry12' but is harmless otherwise)
+cld_fix <- cld_fix %>%
+  mutate(entry = sub("^entry", "", as.character(entry)))
 
-# Coerce to character on the other side too
-lsm_ac <- lsm_ac |>
-  dplyr::mutate(entry = as.character(entry))
+lsm_ac <- lsm_ac %>%
+  mutate(entry = as.character(entry))
 
-plot_df <- lsm_ac |>
-  dplyr::select(entry, estimate, lower.CL, upper.CL) |>
-  dplyr::inner_join(cld_fix, by = "entry") |>
-  dplyr::mutate(entry_num = as.numeric(entry)) |>
-  dplyr::arrange(desc(estimate)) |>
-  dplyr::mutate(entry = factor(entry, levels = entry))
+plot_df <- lsm_ac %>%
+  select(entry, estimate, lower.CL, upper.CL) %>%
+  inner_join(cld_fix, by = "entry") %>%
+  mutate(entry = as.character(entry)) %>%
+  arrange(estimate) %>%                      # order by LS-mean
+  mutate(entry = factor(entry, levels = entry))
 
-# If you prefer numeric ordering on the axis, use:
-# plot_df <- plot_df |>
-#   dplyr::arrange(entry_num) |>
-#   dplyr::mutate(entry = factor(entry, levels = unique(entry)))
+p_cld <- ggplot(plot_df, aes(x = entry, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
+  geom_text(aes(label = group, y = upper.CL), vjust = -0.6, size = 3) +
+  labs(
+    title = "Across-environment LS-means with Tukey CLD",
+    x     = "Entry",
+    y     = "Adjusted mean yield"
+  ) +
+  theme_bw()
 
-p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = entry, y = estimate)) +
-  ggplot2::geom_point() +
-  ggplot2::geom_errorbar(ggplot2::aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
-  ggplot2::geom_text(ggplot2::aes(label = group, y = upper.CL), vjust = -0.6, size = 3) +
-  ggplot2::coord_flip() +
-  ggplot2::labs(title = "Across-environment LS-means with Tukey CLD",
-                x = "Entry", y = "Adjusted mean") +
-  ggplot2::theme_bw()
-print(p)
+p_cld
+
 ```
 
-**Interpretation,** large overlaps in CIs and shared letters indicate similar performance. You may also apply an agronomic threshold (e.g., ≥ 3 bu/ac) as a practical relevance filter in addition to statistical significance.
+Large overlaps in confidence intervals and shared CLD letters indicate similar performance, whereas distinct letters typically reflect statistically distinguishable entries. In practice, you can combine this with an agronomic threshold (for example, ≥ 3 bu/ac) to filter for differences that are both statistically and practically relevant.
 
 ---
 
-# 5. Optional: Residual Spatial Diagnostics (Single Environment)
+# 5. Residual spatial diagnostics (single environment)
 
-**Goal,** inspect whether large-scale structure remains after spatial correction.
+**Goal.** Inspect whether large‑scale spatial structure remains after the Stage‑1 correction.
 
 ```{r heatmap-one-env, fig.height=4.5}
-env_example <- trial %>% distinct(env) %>% slice(1) %>% pull(env)
+env_example <- trial %>%
+  distinct(env) %>%
+  slice(1) %>%
+  pull(env)
+
 trial_env <- trial %>% filter(env == env_example)
 
 ggplot(trial_env, aes(x = col, y = row, fill = yield)) +
-  geom_tile() + scale_y_reverse() + coord_equal() +
-  labs(title = paste("Yield heatmap:", env_example)) +
+  geom_tile() +
+  scale_y_reverse() +
+  coord_equal() +
+  labs(
+    title = paste("Yield heatmap (raw data):", env_example),
+    x     = "Column",
+    y     = "Row"
+  ) +
   theme_bw()
 ```
 
-**Interpretation,** strong bands or patches would suggest residual spatial trends remain. The Stage-1 model reduces, but might not entirely eliminate, structure—especially if the true process is more complex than the candidate forms.
+Pronounced bands or patches in this heatmap suggest that residual spatial trends remain, even after modeling. The Stage‑1 workflow reduces such structure but may not eliminate it completely, especially if the true process is more complex than the candidate covariance forms.
 
 ---
 
-# 6. Optional: Variance Components Overview (BLUP model)
+# 6. Variance‑components overview (BLUP model)
 
-**Goal,** see whether the random-effect magnitudes agree with expectations.
+**Goal.** Check whether the random‑effect magnitudes in the BLUP model align with simulation choices.
 
-> Note: If your R session hasn’t preserved the `lmer` fit, re-fit briefly to print `VarCorr`.
+> Note: This chunk re‑fits a mixed model to the simulated trial solely to print the variance components. It does **not** affect the backend output.
 
 ```{r varcorr, eval=TRUE}
 suppressPackageStartupMessages(library(lme4))
+
 df_blup <- trial %>%
-  mutate(env = factor(env), rep = factor(rep), entry = factor(entry))
-fit2 <- lmer(yield ~ 1 + (1|env) + (1|env:rep) + (1|entry) + (1|entry:env),
-             data = df_blup, REML = TRUE)
+  mutate(
+    env   = factor(env),
+    rep   = factor(rep),
+    entry = factor(entry)
+  )
+
+fit2 <- lmer(
+  yield ~ 1 + (1 | env) + (1 | env:rep) + (1 | entry) + (1 | entry:env),
+  data  = df_blup,
+  REML  = TRUE
+)
+
 VarCorr(fit2)
 ```
 
-**Interpretation,** very small (near-zero) variances produce “boundary (singular) fit” warnings. This is common when the true component is weak or data are limited. Increasing environments, between-entry SD, or G×E SD in the simulator will generally stabilize these estimates.
+Very small (near‑zero) variances often produce “boundary (singular) fit” warnings. This is common when the corresponding random effect is weak or the data are limited. Increasing the between‑entry SD, G×E SD, or the number of environments in the simulator will generally stabilize these estimates.
 
 ---
 
-# 7. Summary and Guidance
+# 7. Optional: backend run report
 
-- **If ranks are recovered** (high Spearman) and **RMSE is modest**, the pipeline is capturing entry signal well.  
-- **If coverage is close to 95%**, the spatial models’ uncertainty looks calibrated.  
-- **If CLD letters agree with practical differences**, reporting is aligned with agronomic significance.  
-- **If spatial residuals look random**, Stage-1 is doing its job; consider expanding the covariance set only if persistent structure remains.  
-- **If singular fits occur**, they are warnings, not errors. They indicate some random effects are negligible under current data/parameters; this is acceptable for inference focused on LS-means and Tukey separation, and typically acceptable for BLUP ranking unless pervasive.
+If the backend wrote a `run_report.txt`, it is displayed here for quick reference.
+
+```{r show-run-report, eval=TRUE}
+if (!is.null(run_report)) {
+  cat(paste(run_report, collapse = "\n"))
+} else {
+  cat("No run_report.txt found in ../sim_output. Run analyze_trial() with the updated backend to generate one.")
+}
+```
 
 ---
 
-# Repro Tips
+# 8. Summary and guidance
 
-- To test robustness, re-simulate with larger `gxe_sd`, more environments, or higher missingness and rerun this report.  
-- Keep raw CSVs and this HTML report together in version control for reproducibility.  
-- When moving from simulated to real data, replace `data/entry_truth.csv` checks with cross-validation or split-environment validation metrics (same code structure).
+- If rank correlations are high and RMSE is modest, the pipeline is capturing entry signal as intended.  
+- If empirical coverage is close to 0.95, the spatial + fallback models’ uncertainty looks reasonably calibrated.  
+- If CLD letters align with both statistical and agronomic differences, the reporting is suitable for selection decisions.  
+- If spatial residuals appear weak and scattered, Stage‑1 is doing its job; persistent patterns may justify expanding or revising the covariance family set.  
+- Singular fits in the BLUP model are warnings, not necessarily failures; they typically mean some random effects are negligible under the current design and simulation parameters.

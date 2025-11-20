@@ -1,0 +1,158 @@
+---
+title: "Variety Trial Analysis Report"
+author: "AJ Brown"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+params:
+  in_csv:
+    label: "Input trial CSV"
+    value: "../real_data/MilletVT2025.csv" # "../real_data/trial_real.csv" or "../sim_data/trial_sim.csv"
+  out_dir:
+    label: "Output directory"
+    value: "../real_output"             # "../real_output" or "../sim_output"
+  alpha:
+    label: "Significance level (alpha)"
+    value: 0.05
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = TRUE,
+  warning = TRUE
+)
+
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+
+# Optional: force project root as knit root if you prefer
+# knitr::opts_knit$set(root.dir = normalizePath(".."))
+```
+
+## 1. Overview
+
+This report runs the backend variety-trial analysis, summarizes the data structure, and displays key outputs.
+
+```{r params-print}
+params
+```
+
+## 2. Source backend and run analysis
+
+```{r run-analysis}
+# This Rmd lives in ./code
+# Backend script is also in ./code
+backend_script <- "r_equivalent.R"
+
+if (!file.exists(backend_script)) {
+  stop("Backend script not found: ", backend_script)
+}
+
+source(backend_script)
+
+# Run analysis using parameters
+res <- analyze_trial(
+  in_csv  = params$in_csv,
+  out_dir = params$out_dir,
+  alpha   = params$alpha
+)
+
+# Read trial and run_report using paths relative to this Rmd (./code)
+trial       <- read.csv(params$in_csv, stringsAsFactors = FALSE)
+report_path <- file.path(params$out_dir, "run_report.txt")
+run_report  <- if (file.exists(report_path)) readLines(report_path) else character(0)
+```
+
+## 3. Data characteristics
+
+### Structure
+
+```{r}
+str(trial)
+```
+
+### Environment summary
+
+```{r}
+env_summary <- trial %>%
+  dplyr::group_by(env) %>%
+  dplyr::summarise(
+    n_plots   = dplyr::n(),
+    n_missing = sum(is.na(yield)),
+    n_used    = n_plots - n_missing,
+    n_rep     = dplyr::n_distinct(rep),
+    n_entry   = dplyr::n_distinct(entry),
+    .groups   = "drop"
+  )
+
+kable(env_summary, caption = "Environment summary") %>%
+  kable_styling()
+```
+
+## 4. Stage 1 results
+
+```{r}
+kable(res$best_cov, caption = "Stage 1 best covariance models") %>%
+  kable_styling()
+```
+
+```{r}
+res$best_cov %>%
+  dplyr::count(best_cov) %>%
+  ggplot(aes(best_cov, n)) +
+  geom_col() +
+  theme_bw() +
+  labs(title = "Stage 1 covariance model frequency",
+       x = "Covariance model",
+       y = "Number of environments")
+```
+
+## 5. Stage 2 LS-means and CLD
+
+```{r}
+lsm <- res$lsm_across
+cld <- res$cld
+out <- dplyr::left_join(lsm, cld, by = "entry")
+
+kable(out, caption = "Across-environment LS-means with CLD") %>%
+  kable_styling()
+```
+
+## 6. BLUPs
+
+```{r}
+kable(head(res$blups, 10), caption = "Entry BLUPs (first 10)") %>%
+  kable_styling()
+```
+
+## 7. Field heatmap and Tukey plot
+
+```{r}
+# Decide label based on path
+mode_label <- if (grepl("sim_data", params$in_csv)) "sim" else "real"
+
+plots <- make_summary_plots(
+  in_csv     = params$in_csv,
+  out_dir    = params$out_dir,
+  mode_label = mode_label
+)
+
+#plots
+```
+
+## 8. Run report
+
+```{r}
+if (length(run_report)) {
+  cat("```text\n")
+  cat(paste(run_report, collapse = "\n"))
+  cat("\n```\n")
+} else {
+  cat("No run report found in ", report_path)
+}
+```

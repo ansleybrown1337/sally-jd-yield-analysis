@@ -1,0 +1,40 @@
+Variety Trial Analysis run report
+--------------------------------
+Timestamp: 2025-11-20 14:26:32 MST
+Input file: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_data\MilletVT2025.csv
+Output directory: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_output
+Data type guess: real_or_external
+Alpha level: 0.05
+
+Data summary:
+  Total rows: 160
+  Total missing yields: 16
+  Rows used in modeling (non-missing yield): 144
+  Number of environments with LS-means: 1
+
+Environment-level summary:
+  Env MilletVT_2025: 160 plots (144 used, 16 missing); reps = 8, entries = 20
+
+Stage 1 (per-environment models):
+  Spatial covariance candidates: expa, exp, sph, gau
+  Environments using spatial covariance (expa/exp/sph/gau): 1
+  Environments using RCBD fallback (none_rcbd): 0
+  Environments using fixed-effects ANOVA fallback (none_lm): 0
+  Best covariance per environment:
+    Env MilletVT_2025: best_cov = sph, best_AICc = 1850.57
+
+Stage 2B (across-environment LS-means):
+  Mode: single_env_within_trial (env = MilletVT_2025)
+  Description: only one environment present; meta-analysis skipped. Within-environment LS-means and Tukey CLD computed directly from raw data for that environment.
+
+Stage 2A (BLUPs):
+  Mode: single_env_multi_rep (random entry and random rep; may fall back to lm)
+  Description: entry treated as random; env and env:rep random effects included when multiple environments and reps are available.
+
+Key modeling assumptions and rules:
+  • Rows with NA yield are excluded from all model fitting.
+  • Entry is always treated as a factor.
+  • Stage 1 prefers spatial nlme models; if all spatial fits fail for an environment, the model falls back to RCBD (lmer) or, if that fails or reps are insufficient, to fixed-effects ANOVA (lm).
+  • Stage 2 meta-analysis is only meaningful when ≥ 2 environments are present; with a single environment, across-env meta is skipped and within-env LS-means + Tukey CLD are used instead.
+  • BLUPs treat entry as random and, when possible, include env and env:rep random effects; if mixed models fail to converge, the code falls back to lm(yield ~ entry) and uses emmeans to summarize entry effects.
+  • Confidence intervals and p-values follow standard approximations from nlme/lme4/emmeans and may be unstable when degrees of freedom are small or designs are highly unbalanced.
