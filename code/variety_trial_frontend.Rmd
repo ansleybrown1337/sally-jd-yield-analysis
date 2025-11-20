@@ -5,14 +5,14 @@ output:
   html_document:
     toc: true
     toc_depth: 3
-    number_sections: true
+    number_sections: false
 params:
   in_csv:
     label: "Input trial CSV"
-    value: "../real_data/MilletVT2025.csv" # "../real_data/trial_real.csv" or "../sim_data/trial_sim.csv"
+    value: "../real_data/MilletVT2025.csv"  # e.g., "../real_data/MilletVT2025.csv" or "../sim_data/trial_sim.csv"
   out_dir:
     label: "Output directory"
-    value: "../real_output"             # "../real_output" or "../sim_output"
+    value: "../real_output"                 # e.g., "../real_output" or "../sim_output"
   alpha:
     label: "Significance level (alpha)"
     value: 0.05
@@ -20,33 +20,48 @@ params:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo    = TRUE,
-  message = TRUE,
-  warning = TRUE
+  echo       = FALSE,   # hide code by default
+  message    = FALSE,   # suppress messages (e.g., from analyze_trial)
+  warning    = TRUE,    # keep warnings like singular fits
+  fig.align  = "center",
+  fig.width  = 8,
+  fig.height = 5
 )
 
-library(dplyr)
-library(ggplot2)
-library(knitr)
-library(kableExtra)
-
-# Optional: force project root as knit root if you prefer
-# knitr::opts_knit$set(root.dir = normalizePath(".."))
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(knitr)
+  library(kableExtra)
+  library(tibble)
+})
 ```
 
-## 1. Overview
+# 1. Overview and analysis workflow
 
-This report runs the backend variety-trial analysis, summarizes the data structure, and displays key outputs.
+This report is a front end for the variety‑trial backend in `r_equivalent.R`. It runs the analysis, then summarizes key outputs and the modeling decisions that were taken.
 
-```{r params-print}
-params
-```
+The backend currently follows these rules:
 
-## 2. Source backend and run analysis
+- **Stage 1, within each environment**
+  - Try spatial `nlme::lme` models with candidate covariance structures (`expa`, `exp`, `sph`, `gau`) and choose the best by AICc when at least one converges.
+  - If all spatial fits fail, fall back to:
+    - **RCBD** via `lme4::lmer(yield ~ entry + (1 | rep))` when there are at least two reps.
+    - **Fixed‑effects ANOVA** via `lm(yield ~ entry)` when replication is inadequate or `lmer` fails.
+- **Stage 2B, across‑environment LS‑means**
+  - If there are **two or more environments with LS‑means**, fit an inverse‑variance weighted meta‑analysis with a random environment effect and compute Tukey‑adjusted CLD letters.
+  - If there is **only one environment**, skip meta‑analysis and compute LS‑means and Tukey CLD directly within that environment.
+- **Stage 2A, BLUPs**
+  - When multiple environments exist, fit a MET mixed model with random `env`, `env:rep`, `entry`, and `entry:env`.
+  - With a single environment, fit a reduced model with random `entry` and, when possible, random `rep`.
+  - If mixed models fail, fall back to `lm(yield ~ entry)` and report entry means with standard errors.
+
+The sections below show how these rules were applied for this particular dataset, together with environment summaries, LS‑means, CLD letters, BLUPs, and diagnostic plots.
+
+# 2. Run backend and capture results
 
 ```{r run-analysis}
-# This Rmd lives in ./code
-# Backend script is also in ./code
+# This Rmd is assumed to live in ./code
 backend_script <- "r_equivalent.R"
 
 if (!file.exists(backend_script)) {
@@ -62,78 +77,196 @@ res <- analyze_trial(
   alpha   = params$alpha
 )
 
-# Read trial and run_report using paths relative to this Rmd (./code)
+# Load trial data and run_report using paths relative to this Rmd
 trial       <- read.csv(params$in_csv, stringsAsFactors = FALSE)
 report_path <- file.path(params$out_dir, "run_report.txt")
 run_report  <- if (file.exists(report_path)) readLines(report_path) else character(0)
+
+# Quick derived quantities used later
+n_env_stage1 <- dplyr::n_distinct(res$stage1$env)
+n_env_trial  <- dplyr::n_distinct(trial$env)
+n_rep_trial  <- dplyr::n_distinct(trial$rep)
+
+stage2_mode <- if (n_env_stage1 > 1L) {
+  "Multi-environment meta-analysis with random env and inverse-variance weights"
+} else {
+  paste0(
+    "Single-environment analysis (env = ",
+    unique(res$stage1$env),
+    "); meta-analysis skipped, LS-means + Tukey CLD computed within that environment"
+  )
+}
+
+blup_mode <- if (n_env_trial < 2L) {
+  if (n_rep_trial < 2L) {
+    "Single environment, single rep: random entry only; may fall back to lm(yield ~ entry)"
+  } else {
+    "Single environment, multiple reps: random entry and random rep; may fall back to lm(yield ~ entry)"
+  }
+} else {
+  "Multiple environments: random env, env:rep, entry, and entry:env; may fall back to lm(yield ~ entry)"
+}
+
+# Stage 1 covariance usage
+cov_freq <- res$best_cov %>%
+  count(best_cov, name = "n_env") %>%
+  arrange(desc(n_env))
 ```
 
-## 3. Data characteristics
+## 2.1 Analysis configuration and decision summary
 
-### Structure
+```{r decision-summary}
+config_tbl <- tibble(
+  item        = c(
+    "Input CSV",
+    "Output directory",
+    "Alpha level",
+    "Number of environments in trial",
+    "Number of environments with LS-means (Stage 1)",
+    "Stage 2B mode",
+    "Stage 2A BLUP mode"
+  ),
+  value       = c(
+    params$in_csv,
+    params$out_dir,
+    as.character(params$alpha),
+    as.character(n_env_trial),
+    as.character(n_env_stage1),
+    stage2_mode,
+    blup_mode
+  )
+)
 
-```{r}
-str(trial)
+kable(config_tbl, col.names = c("Item", "Value"),
+      caption = "Key analysis configuration and decision rules for this run") %>%
+  kable_styling(full_width = FALSE)
 ```
 
-### Environment summary
+Interpretation:
 
-```{r}
+- The **Stage 2B mode** tells you whether a proper across‑environment meta‑analysis was fit or whether the code reverted to a single‑environment LS‑means analysis.  
+- The **BLUP mode** clarifies how many random effects were included in the MET model, given the number of environments and reps present in the data.
+
+# 3. Data characteristics
+
+This section summarizes the trial data used by the backend. Yields with `NA` are excluded from model fitting, but they are counted here for context.
+
+```{r env-summary}
 env_summary <- trial %>%
-  dplyr::group_by(env) %>%
-  dplyr::summarise(
-    n_plots   = dplyr::n(),
+  group_by(env) %>%
+  summarise(
+    n_plots   = n(),
     n_missing = sum(is.na(yield)),
     n_used    = n_plots - n_missing,
-    n_rep     = dplyr::n_distinct(rep),
-    n_entry   = dplyr::n_distinct(entry),
+    n_rep     = n_distinct(rep),
+    n_entry   = n_distinct(entry),
     .groups   = "drop"
   )
 
-kable(env_summary, caption = "Environment summary") %>%
-  kable_styling()
+kable(env_summary,
+      caption = "Environment-level summary of plots and replication") %>%
+  kable_styling(full_width = FALSE)
 ```
 
-## 4. Stage 1 results
+For a quick visual check or to debug unusual environments, you may wish to view the first few rows of the raw trial file.
 
-```{r}
-kable(res$best_cov, caption = "Stage 1 best covariance models") %>%
-  kable_styling()
+```{r trial-head}
+kable(head(trial, 10),
+      caption = "First 10 rows of the input trial data") %>%
+  kable_styling(font_size = 9)
 ```
 
-```{r}
-res$best_cov %>%
-  dplyr::count(best_cov) %>%
-  ggplot(aes(best_cov, n)) +
-  geom_col() +
-  theme_bw() +
-  labs(title = "Stage 1 covariance model frequency",
-       x = "Covariance model",
-       y = "Number of environments")
+# 4. Stage 1: within-environment models
+
+Stage 1 selects a covariance structure for each environment or falls back to simpler models when spatial fits fail. The table below shows the chosen model and (when available) its AICc.
+
+```{r stage1-table}
+kable(res$best_cov,
+      caption = "Stage 1: best covariance or fallback model by environment") %>%
+  kable_styling(full_width = FALSE)
 ```
 
-## 5. Stage 2 LS-means and CLD
+The next table aggregates how often each covariance / fallback type was used.
 
-```{r}
+```{r stage1-cov-freq}
+kable(cov_freq,
+      col.names = c("Covariance / fallback", "Number of environments"),
+      caption   = "Frequency of Stage 1 covariance and fallback choices") %>%
+  kable_styling(full_width = FALSE)
+```
+
+Interpretation:
+
+- Spatial models (`expa`, `exp`, `sph`, `gau`) indicate successful fitting of a spatial `nlme` model.  
+- `none_rcbd` indicates that all spatial fits failed and a randomized complete block design model (`lmer`) was used.  
+- `none_lm` indicates a further fallback to fixed‑effects ANOVA (`lm`) when replication or convergence was insufficient for random block effects.
+
+# 5. Stage 2B: across-environment LS-means and CLD
+
+If more than one environment contributed LS‑means, Stage 2 performs an inverse‑variance meta‑analysis with a random environment effect and uses Tukey‑adjusted groupings to summarize differences among entries. When only one environment is available, these LS‑means and CLD letters are computed within that environment instead.
+
+```{r stage2-table}
 lsm <- res$lsm_across
 cld <- res$cld
-out <- dplyr::left_join(lsm, cld, by = "entry")
 
-kable(out, caption = "Across-environment LS-means with CLD") %>%
-  kable_styling()
+lsm_cld <- dplyr::left_join(lsm, cld, by = "entry")
+
+kable(lsm_cld,
+      caption = "BLUPs Across-environment (or within-env) LS-means and CLD letters") %>%
+  kable_styling(full_width = FALSE)
 ```
 
-## 6. BLUPs
+The plot below mirrors the backend’s summary figure: entries are on the x‑axis ordered by numeric entry label, and adjusted mean yield with confidence intervals is on the y‑axis. Tukey CLD letters are printed near the upper confidence limit for each entry.
 
-```{r}
-kable(head(res$blups, 10), caption = "Entry BLUPs (first 10)") %>%
-  kable_styling()
+```{r stage2-plot, fig.height=5}
+# Reconstruct plot data in the same way as make_summary_plots()
+plot_df <- lsm %>%
+  mutate(entry = as.character(entry)) %>%
+  left_join(cld %>%
+              mutate(entry = as.character(entry)),
+            by = "entry") %>%
+  mutate(entry_num = as.numeric(entry)) %>%
+  arrange(estimate) %>%
+  mutate(entry = factor(entry, levels = unique(entry)))
+
+ggplot(plot_df, aes(x = entry, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
+  geom_text(aes(label = group, y = upper.CL), vjust = -0.6, size = 3) +
+  labs(
+    title = "BLUPs Across-environment LS-means with Tukey CLD",
+    x     = "Entry",
+    y     = "Adjusted mean yield"
+  ) +
+  theme_bw()
 ```
 
-## 7. Field heatmap and Tukey plot
+Interpretation:
 
-```{r}
-# Decide label based on path
+- Entries that share at least one letter in the CLD column are **not** significantly different at the chosen alpha (Tukey adjustment).  
+- Entries with no shared letters are significantly different in yield.  
+- You can combine this with a practical threshold (for example, a minimum yield difference) to identify entries that are both statistically and agronomically distinct.
+
+# 6. Stage 2A: BLUPs for entry performance
+
+Entry BLUPs (Best Linear Unbiased Predictions) are model-based predictions of each entry’s underlying performance when entries are treated as random effects in a mixed model. BLUPs borrow strength across environments and replications, incorporate the estimated variance components (including G×E), and shrink predictions toward the grand mean when data for an entry are limited. This produces more stable and reliable rankings than simple means or per-environment LS-means, particularly when the design is unbalanced or entries are missing in some environments. BLUPs therefore represent the best available predictor of an entry’s expected performance in future environments.
+
+```{r blup-table}
+kable(res$blups,
+      caption = "Entry BLUPs and associated standard errors") %>%
+  kable_styling(full_width = FALSE)
+```
+
+Interpretation:
+
+- Larger BLUPs correspond to higher predicted performance on the chosen yield scale (relative to the grand mean).  
+- Standard errors quantify the uncertainty in each BLUP; wide differences in SE often reflect uneven replication or missingness across environments.
+
+# 7. Field layout heatmap and summary plots
+
+The function `make_summary_plots()` from the backend produces a field layout heatmap for one example environment and reuses the CLD plot logic.
+
+```{r summary-plots, fig.height=5}
 mode_label <- if (grepl("sim_data", params$in_csv)) "sim" else "real"
 
 plots <- make_summary_plots(
@@ -142,17 +275,30 @@ plots <- make_summary_plots(
   mode_label = mode_label
 )
 
-#plots
+# The plots are printed by make_summary_plots(); the returned list is kept for reference.
 ```
 
-## 8. Run report
+The heatmap is helpful for visually checking residual spatial patterns in the raw yield data (for example, bands, patches, or gradients) that might motivate alternative spatial structures or additional covariates.
 
-```{r}
+# 8. Backend run report
+
+If the backend wrote a `run_report.txt` file, it is reproduced below verbatim for full transparency.
+
+```{r run-report}
 if (length(run_report)) {
   cat("```text\n")
   cat(paste(run_report, collapse = "\n"))
   cat("\n```\n")
 } else {
-  cat("No run report found in ", report_path)
+  cat("No run_report.txt found in ", report_path)
 }
 ```
+
+This report records:
+
+- The timestamp, input file, and output directory.  
+- Environment‑level summaries and which covariance / fallback model was chosen in each one.  
+- Whether Stage 2B ran as a multi‑environment meta‑analysis or as a single‑environment LS‑means analysis.  
+- How the BLUP model was specified and what fallbacks were used, if any.
+
+Together with the tables and figures above, this should provide a complete, transparent record of what the backend did for the trial and how to interpret the results.
