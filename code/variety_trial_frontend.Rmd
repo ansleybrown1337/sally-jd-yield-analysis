@@ -9,7 +9,7 @@ output:
 params:
   in_csv:
     label: "Input trial CSV"
-    value: "../real_data/UVPT 2025 Regional Multi Site Data.csv"  # e.g., "../real_data/MilletVT2025.csv" or "../sim_data/trial_sim.csv" or "../real_data/UVPT 2025 Regional Multi Site Data.csv"
+    value: "../real_data/MilletVT2025.csv"  # e.g., "../real_data/MilletVT2025.csv" or "../sim_data/trial_sim.csv" or "../real_data/UVPT 2025 Regional Multi Site Data.csv"
   out_dir:
     label: "Output directory"
     value: "../real_output"                 # e.g., "../real_output" or "../sim_output"

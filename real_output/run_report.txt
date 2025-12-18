@@ -1,27 +1,19 @@
 Variety Trial Analysis run report
 --------------------------------
-Timestamp: 2025-12-18 14:48:16 MST
-Input file: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_data\UVPT 2025 Regional Multi Site Data.csv
+Timestamp: 2025-12-18 14:53:23 MST
+Input file: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_data\MilletVT2025.csv
 Output directory: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_output
 Data type guess: real_or_external
 Alpha level: 0.05
 
 Data summary:
-  Total rows: 1134
-  Total missing yields: 19
-  Rows used in modeling (non-missing yield): 1115
-  Number of environments with LS-means: 9
+  Total rows: 160
+  Total missing yields: 16
+  Rows used in modeling (non-missing yield): 144
+  Number of environments with LS-means: 1
 
 Environment-level summary:
-  Env Akron_2025: 126 plots (126 used, 0 missing); reps = 3, entries = 42
-  Env Burlington_2025: 126 plots (124 used, 2 missing); reps = 3, entries = 42
-  Env Genoa_2025: 126 plots (124 used, 2 missing); reps = 3, entries = 42
-  Env Julesburg_2025: 126 plots (126 used, 0 missing); reps = 3, entries = 42
-  Env Lamar_2025: 126 plots (120 used, 6 missing); reps = 3, entries = 42
-  Env Orchard_2025: 126 plots (124 used, 2 missing); reps = 3, entries = 42
-  Env SLake_2025: 126 plots (124 used, 2 missing); reps = 3, entries = 42
-  Env Walsh_2025: 126 plots (123 used, 3 missing); reps = 3, entries = 42
-  Env Yuma_2025: 126 plots (124 used, 2 missing); reps = 3, entries = 42
+  Env MilletVT_2025: 160 plots (144 used, 16 missing); reps = 8, entries = 20
 
 Stage 1 (per-environment models):
   Spatial covariance candidates: expa, exp, sph, gau
@@ -29,26 +21,18 @@ Stage 1 (per-environment models):
   Full model-selection table written to: stage1_model_selection.csv
   Plot-level diagnostics written to: diagnostics_stage1.csv
   CV summary written to: cv_by_env.csv
-  Environments using spatial covariance (expa/exp/sph/gau): 9
+  Environments using spatial covariance (expa/exp/sph/gau): 1
   Environments using RCBD fallback (none_rcbd): 0
   Environments using fixed-effects ANOVA fallback (none_lm): 0
   Best covariance per environment:
-    Env Akron_2025: best_cov = expa, best_AICc = 645.32
-    Env Burlington_2025: best_cov = gau, best_AICc = 638.48
-    Env Genoa_2025: best_cov = gau, best_AICc = 722.58
-    Env Julesburg_2025: best_cov = sph, best_AICc = 756.79
-    Env Lamar_2025: best_cov = sph, best_AICc = 595.88
-    Env Orchard_2025: best_cov = sph, best_AICc = 673.07
-    Env SLake_2025: best_cov = gau, best_AICc = 624.27
-    Env Walsh_2025: best_cov = gau, best_AICc = 701.44
-    Env Yuma_2025: best_cov = sph, best_AICc = 634.89
+    Env MilletVT_2025: best_cov = sph, best_AICc = 1850.57
 
 Stage 2B (across-environment LS-means):
-  Mode: multi_env_meta
-  Description: inverse-variance meta-analysis across environments with random env (nlme::lme) when possible; Tukey-adjusted CLD via emmeans + multcompView.
+  Mode: single_env_within_trial (env = MilletVT_2025)
+  Description: only one environment present; meta-analysis skipped. Within-environment LS-means and Tukey CLD computed directly from raw data for that environment.
 
 Stage 2A (BLUPs):
-  Mode: multi_env (random env, env:rep, entry, entry:env; may fall back to lm)
+  Mode: single_env_multi_rep (random entry and random rep; may fall back to lm)
   Description: entry treated as random; env and env:rep random effects included when multiple environments and reps are available.
 
 Key modeling assumptions and rules:
