@@ -176,3 +176,11 @@ A unified one-stage model can also estimate entry BLUPs across all environments:
 * Add heritability and stability metrics for BLUP outputs.
 * Prepare publication-ready summary tables of entry means and grouping letters for extension reports.
 
+## Tickets and Issues
+- [ ] Report model spec + Tukey alpha displayed everywhere
+- [ ] Add consistent covariance ranking + export model-selection table
+- [ ] Studentized residual plots + outlier shortlist (no auto-drop)
+- [ ] Residual heatmaps (selected model residuals)
+- [ ] CV reporting in final tables
+
+
