@@ -886,6 +886,9 @@ make_summary_plots <- function(in_csv,
                                show_residual_heatmap = TRUE,
                                show_residual_diagnostics = TRUE,
                                show_yield_heatmap = FALSE) {
+  if (!is.null(show_heatmap)) {
+    show_residual_heatmap <- isTRUE(show_heatmap)
+  }
 
   clean_entry_labels <- function(x) sub("^entry", "", as.character(x))
 
@@ -920,28 +923,77 @@ make_summary_plots <- function(in_csv,
   cld_fix <- cld_fix %>% dplyr::mutate(entry = clean_entry_labels(entry))
 
   plot_df <- lsm_ac %>%
-    dplyr::select(entry, estimate, lower.CL, upper.CL) %>%
+    dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL) %>%
     dplyr::inner_join(cld_fix, by = "entry") %>%
     dplyr::mutate(entry = as.character(entry)) %>%
     dplyr::arrange(estimate) %>%
     dplyr::mutate(entry = factor(entry, levels = entry))
 
   if (show_tukey) {
-    p_tukey <- ggplot2::ggplot(plot_df, ggplot2::aes(x = entry, y = estimate)) +
-      ggplot2::geom_point() +
-      ggplot2::geom_errorbar(ggplot2::aes(ymin = lower.CL, ymax = upper.CL), width = 0.2) +
-      ggplot2::geom_text(ggplot2::aes(label = group, y = upper.CL), vjust = -0.6, size = 3) +
+    
+    alpha_wide <- 0.05  # 95% CI
+    alpha_nar  <- 0.30  # 70% CI
+    
+    plot_df2 <- plot_df %>%
+      dplyr::mutate(
+        df_eff = suppressWarnings(as.numeric(.data$df)),
+        se_eff = suppressWarnings(as.numeric(.data$stderr)),
+        
+        t_wide = dplyr::if_else(
+          is.na(df_eff),
+          stats::qnorm(1 - alpha_wide/2),
+          stats::qt(1 - alpha_wide/2, df = df_eff)
+        ),
+        t_nar = dplyr::if_else(
+          is.na(df_eff),
+          stats::qnorm(1 - alpha_nar/2),
+          stats::qt(1 - alpha_nar/2, df = df_eff)
+        ),
+        
+        lower_wide = estimate - t_wide * se_eff,
+        upper_wide = estimate + t_wide * se_eff,
+        lower_nar  = estimate - t_nar  * se_eff,
+        upper_nar  = estimate + t_nar  * se_eff
+      )
+    
+    p_tukey <- ggplot2::ggplot(plot_df2, ggplot2::aes(y = entry, x = estimate)) +
+      ggplot2::geom_linerange(
+        ggplot2::aes(xmin = lower_wide, xmax = upper_wide),
+        linewidth = 5, alpha = 0.20, color = "darkred"
+      ) +
+      ggplot2::geom_linerange(
+        ggplot2::aes(xmin = lower_nar, xmax = upper_nar),
+        linewidth = 5, alpha = 0.40, color = "darkred"
+      ) +
+      ggplot2::geom_point(color = "darkred", size = 2) +
+      ggplot2::geom_text(
+        ggplot2::aes(x = upper_wide, label = group),
+        hjust = -0.2, size = 3
+      ) +
       ggplot2::labs(
         title = "Across-environment LS-means with Tukey CLD",
-        x = "Entry",
-        y = "Adjusted mean yield"
+        subtitle = "Light band: 95% CI (α = 0.05). Dark band: 70% CI (α = 0.30).",
+        x = "Adjusted mean yield",
+        y = "Entry (ordered by estimate)"
       ) +
-      ggplot2::theme_bw() +
-      ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1))
+      ggplot2::theme(
+        plot.title      = ggplot2::element_text(size = 18, face = "bold"),
+        plot.subtitle   = ggplot2::element_text(size = 14),
+        axis.title.x    = ggplot2::element_text(size = 14),
+        axis.title.y    = ggplot2::element_text(size = 14),
+        axis.text.x     = ggplot2::element_text(size = 12),
+        axis.text.y     = ggplot2::element_text(size = 12),
+        panel.grid.major.y = ggplot2::element_blank(),  # reduces clutter
+        panel.grid.minor   = ggplot2::element_blank()
+      ) +
+      ggplot2::theme_bw()
+    
     print(p_tukey)
+    
   } else {
     p_tukey <- NULL
   }
+  
 
   diag_path <- file.path(out_dir, "diagnostics_stage1.csv")
   if (!file.exists(diag_path)) {
