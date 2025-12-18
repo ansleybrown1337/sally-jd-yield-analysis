@@ -34,7 +34,10 @@ suppressPackageStartupMessages({
   library(knitr)
   library(kableExtra)
   library(tibble)
+  library(readr)
+  #library(patchwork)
 })
+
 ```
 
 # 1. Overview and analysis workflow
@@ -82,6 +85,17 @@ trial       <- read.csv(params$in_csv, stringsAsFactors = FALSE)
 report_path <- file.path(params$out_dir, "run_report.txt")
 run_report  <- if (file.exists(report_path)) readLines(report_path) else character(0)
 
+# New backend artifacts (written by updated r_equivalent.R)
+p_modelsel <- file.path(params$out_dir, "stage1_model_selection.csv")
+p_specs    <- file.path(params$out_dir, "model_specs_stage1.csv")
+p_diag     <- file.path(params$out_dir, "diagnostics_stage1.csv")
+p_cv       <- file.path(params$out_dir, "cv_by_env.csv")
+
+stage1_model_selection <- if (file.exists(p_modelsel)) readr::read_csv(p_modelsel, show_col_types = FALSE) else NULL
+model_specs_stage1     <- if (file.exists(p_specs))    readr::read_csv(p_specs, show_col_types = FALSE)    else NULL
+diagnostics_stage1     <- if (file.exists(p_diag))     readr::read_csv(p_diag, show_col_types = FALSE)     else NULL
+cv_by_env              <- if (file.exists(p_cv))       readr::read_csv(p_cv, show_col_types = FALSE)       else NULL
+
 # Quick derived quantities used later
 n_env_stage1 <- dplyr::n_distinct(res$stage1$env)
 n_env_trial  <- dplyr::n_distinct(trial$env)
@@ -108,9 +122,17 @@ blup_mode <- if (n_env_trial < 2L) {
 }
 
 # Stage 1 covariance usage
-cov_freq <- res$best_cov %>%
-  count(best_cov, name = "n_env") %>%
-  arrange(desc(n_env))
+cov_freq <- if (!is.null(stage1_model_selection)) {
+  stage1_model_selection %>%
+    filter(best) %>%
+    count(cov, name = "n_env") %>%
+    arrange(desc(n_env))
+} else {
+  res$best_cov %>%
+    count(best_cov, name = "n_env") %>%
+    arrange(desc(n_env))
+}
+
 
 mode_label <- if (grepl("sim_data", params$in_csv)) "sim" else "real"
 
@@ -184,9 +206,20 @@ kable(head(trial, 10),
 Stage 1 selects a covariance structure for each environment or falls back to simpler models when spatial fits fail. The table below shows the chosen model and (when available) its AICc.
 
 ```{r stage1-table}
-kable(res$best_cov,
-      caption = "Stage 1: best covariance or fallback model by environment") %>%
-  kable_styling(full_width = FALSE)
+if (!is.null(model_specs_stage1)) {
+  # Prefer the explicit model spec table (fixed, random, engine, chosen covariance)
+  spec_show <- model_specs_stage1 %>%
+    select(env, engine, method, fixed, random, cov_selected)
+
+  kable(spec_show,
+        caption = "Stage 1: model specification by environment (fixed, random, engine, and selected residual/covariance structure)") %>%
+    kable_styling(full_width = FALSE)
+} else {
+  # Fallback to the older object in res
+  kable(res$best_cov,
+        caption = "Stage 1: best covariance or fallback model by environment") %>%
+    kable_styling(full_width = FALSE)
+}
 ```
 
 The next table aggregates how often each covariance / fallback type was used.
@@ -197,6 +230,26 @@ kable(cov_freq,
       caption   = "Frequency of Stage 1 covariance and fallback choices") %>%
   kable_styling(full_width = FALSE)
 ```
+
+```{r stage1-model-select}
+if (!is.null(stage1_model_selection)) {
+  modelsel_show <- stage1_model_selection %>%
+    group_by(env) %>%
+    mutate(delta_AICc = AICc - min(AICc, na.rm = TRUE)) %>%
+    ungroup() %>%
+    arrange(env, desc(best), AICc) %>%
+    select(env, cov, converged, logLik, k, AIC, AICc, BIC, delta_AICc, best)
+
+
+  kable(modelsel_show,
+        caption = "Stage 1: full model-selection table (all covariance candidates and fallbacks, with AIC/AICc/BIC and best flag)") %>%
+    kable_styling(full_width = FALSE) %>%
+    scroll_box(width = "100%", height = "400px")
+} else {
+  cat("No stage1_model_selection.csv found in output directory. This section requires the updated backend.\n")
+}
+```
+
 
 Interpretation:
 
@@ -259,24 +312,117 @@ Interpretation:
 - Larger BLUPs correspond to higher predicted performance on the chosen yield scale (relative to the grand mean).  
 - Standard errors quantify the uncertainty in each BLUP; wide differences in SE often reflect uneven replication or missingness across environments.
 
+## CV Summary
+```{r stage2-cv-summary}
+# CV summary (Stage 1)
+if (!is.null(cv_by_env)) {
+
+  cv_show <- cv_by_env %>%
+    select(env, n_used, mean_y, rmse, cv_pct, cov_selected)
+
+  kable(cv_show,
+        caption = "Stage 1 CV by environment (computed from Stage 1 residual RMSE and mean yield)") %>%
+    kable_styling(full_width = FALSE)
+
+} else {
+  cat("No cv_by_env.csv found in output directory. This section requires the updated backend.\n")
+}
+
+```
+
+
 # 7. Field layout heatmap and summary plots
 
 The function `make_summary_plots()` from the backend produces a field layout heatmap for one example environment and reuses the CLD plot logic.
 
 ```{r summary-plots, fig.height=5}
-mode_label <- if (grepl("sim_data", params$in_csv)) "sim" else "real"
+if (!is.null(diagnostics_stage1)) {
 
-plots2 <- make_summary_plots(
-  in_csv     = params$in_csv,
-  out_dir    = params$out_dir,
-  mode_label = mode_label,
-  show_tukey = FALSE,
-  show_heatmap = TRUE
-)
+  # pick a representative environment (first by default)
+  env_pick <- diagnostics_stage1 %>% filter(!is.na(env)) %>% pull(env) %>% unique() %>% .[1]
+
+  d_env <- diagnostics_stage1 %>%
+    filter(env == env_pick)
+
+  # Identify a residual column produced by backend
+  resid_col <- c("resid_norm", "resid_student", "resid_std", "resid")[
+    c("resid_norm", "resid_student", "resid_std", "resid") %in% names(d_env)
+  ][1]
+
+  if (is.null(resid_col) || length(resid_col) == 0) stop("No residual column found in diagnostics_stage1.csv")
+  
+  stopifnot(all(c("row","col") %in% names(d_env)))
+
+  # Heatmap: residuals (not raw yield)
+  p_heat_resid <- ggplot(d_env, aes(x = col, y = row, fill = .data[[resid_col]])) +
+    geom_tile() +
+    coord_equal() +
+    scale_y_reverse() +
+    labs(
+      title = paste0("Residual heatmap (Stage 1), env = ", env_pick),
+      subtitle = paste0("Residual column: ", resid_col),
+      x = "Column",
+      y = "Row",
+      fill = "Residual"
+    ) +
+    theme_minimal()
+
+  # Diagnostics: QQ plot and residuals vs fitted
+  stopifnot("fitted" %in% names(d_env))
+  
+  p_resid_fit <- ggplot(d_env, aes(x = fitted, y = .data[[resid_col]])) +
+    geom_point(alpha = 0.7) +
+    geom_hline(yintercept = 0, linetype = 2) +
+    labs(
+      title = paste0("Residuals vs fitted, env = ", env_pick),
+      x = "Fitted value",
+      y = resid_col
+    ) +
+    theme_minimal()
+
+  p_qq <- ggplot(d_env, aes(sample = .data[[resid_col]])) +
+    stat_qq() +
+    stat_qq_line() +
+    labs(
+      title = paste0("Q–Q plot of residuals, env = ", env_pick),
+      x = "Theoretical quantiles",
+      y = "Sample quantiles"
+    ) +
+    theme_minimal()
+
+  print(p_heat_resid)
+  print(p_resid_fit)
+  print(p_qq)
+
+  # Optional: outlier table if flag exists
+  if ("flag_outlier" %in% names(d_env)) {
+    outliers <- d_env %>%
+      filter(flag_outlier) %>%
+      select(env, rep, row, col, entry, yield, fitted, resid = .data[[resid_col]], flag_outlier)
+
+    if (nrow(outliers) > 0) {
+      kable(outliers,
+            caption = paste0("Potential outliers flagged by backend (env = ", env_pick, ")")) %>%
+        kable_styling(full_width = FALSE)
+    } else {
+      cat("No outliers flagged by backend for env = ", env_pick, "\n")
+    }
+  }
+
+} else {
+  # Fallback to backend plotting function, if diagnostics file is unavailable
+  plots2 <- make_summary_plots(
+    in_csv     = params$in_csv,
+    out_dir    = params$out_dir,
+    mode_label = mode_label,
+    show_tukey = FALSE,
+    show_heatmap = TRUE
+  )
+}
 
 ```
 
-The heatmap is helpful for visually checking residual spatial patterns in the raw yield data (for example, bands, patches, or gradients) that might motivate alternative spatial structures or additional covariates.
+The heatmap is helpful for visually checking residual spatial patterns in the residuals from the selected Stage-1 model (for example, bands, patches, or gradients) that might motivate alternative spatial structures or additional covariates.
 
 # 8. Backend run report
 

@@ -1,6 +1,6 @@
 Variety Trial Analysis run report
 --------------------------------
-Timestamp: 2025-11-20 15:27:44 MST
+Timestamp: 2025-12-18 13:22:08 MST
 Input file: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_data\MilletVT2025.csv
 Output directory: C:\Users\ansle\OneDrive\Documents\GitHub\sally-jd-yield-analysis\real_output
 Data type guess: real_or_external
@@ -17,6 +17,10 @@ Environment-level summary:
 
 Stage 1 (per-environment models):
   Spatial covariance candidates: expa, exp, sph, gau
+  Explicit model specs written to: model_specs_stage1.csv
+  Full model-selection table written to: stage1_model_selection.csv
+  Plot-level diagnostics written to: diagnostics_stage1.csv
+  CV summary written to: cv_by_env.csv
   Environments using spatial covariance (expa/exp/sph/gau): 1
   Environments using RCBD fallback (none_rcbd): 0
   Environments using fixed-effects ANOVA fallback (none_lm): 0
