@@ -250,7 +250,3 @@ The script loads:
 - `multcompView`
 - `broom`
 - `tibble`
-
-## Repository publication note
-
-Before making the repository public, the real data and real outputs should remain ignored by Git. At minimum, `real_data/` and `real_output/` should be excluded. Depending on your privacy needs, you may also want to review whether `docs/from sally/` belongs in the public version.
