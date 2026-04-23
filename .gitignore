@@ -2,7 +2,7 @@
 .Rhistory
 .Rapp.history
 
-# Session Data files
+# Session data files
 .RData
 .RDataTmp
 
@@ -21,29 +21,39 @@
 # RStudio files
 .Rproj.user/
 
-# produced vignettes
+# Produced vignettes
 vignettes/*.html
 vignettes/*.pdf
 
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
+# OAuth2 token
 .httr-oauth
 
-# knitr and R markdown default cache directories
+# knitr and R Markdown cache
 *_cache/
 /cache/
 
-# Temporary files created by R markdown
+# Temporary files created by R Markdown
 *.utf8.md
 *.knit.md
 
-# R Environment Variables
+# R environment variables
 .Renviron
 
-# pkgdown site
-docs/
-
-# translation temp files
+# Translation temp files
 po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Keep rendered report docs out of Git unless you intentionally publish them
+# docs/
+
+# --------------------------------------------------
+# Private project data and outputs
+# --------------------------------------------------
+real_data/
+real_output/
+docs/from sally/
+
+# Optional: uncomment if these collaborator source files should also stay private
+# docs/from sally/
