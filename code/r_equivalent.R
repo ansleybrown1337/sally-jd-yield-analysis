@@ -1103,8 +1103,9 @@ make_summary_plots <- function(in_csv,
 
 # =========================================================
 # Run block using DATA_MODE switch (interactive only)
+# Guarded so the file can be safely sourced by Shiny apps.
 # =========================================================
-if (interactive()) {
+if (interactive() && exists("DATA_MODE", inherits = FALSE)) {
   if (DATA_MODE == "sim") {
     in_csv  <- SIM_IN_CSV
     out_dir <- SIM_OUT_DIR
