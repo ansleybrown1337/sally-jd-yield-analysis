@@ -584,23 +584,23 @@
         "Package": "commonmark",
         "Type": "Package",
         "Title": "High Performance CommonMark and Github Markdown Rendering in R",
-        "Version": "1.9.2",
+        "Version": "2.0.0",
         "Authors@R": "c(\n    person(\"Jeroen\", \"Ooms\", ,\"jeroenooms@gmail.com\", role = c(\"aut\", \"cre\"),\n        comment = c(ORCID = \"0000-0002-4035-0289\")),\n    person(\"John MacFarlane\", role = \"cph\", comment = \"Author of cmark\"))",
         "Description": "The CommonMark specification <https://github.github.com/gfm/> defines\n    a rationalized version of markdown syntax. This package uses the 'cmark' \n    reference implementation for converting markdown text into various formats\n    including html, latex and groff man. In addition it exposes the markdown\n    parse tree in xml format. Also includes opt-in support for GFM extensions\n    including tables, autolinks, and strikethrough text.",
         "License": "BSD_2_clause + file LICENSE",
         "URL": "https://docs.ropensci.org/commonmark/\nhttps://ropensci.r-universe.dev/commonmark",
         "BugReports": "https://github.com/r-lib/commonmark/issues",
         "Suggests": "curl, testthat, xml2",
-        "RoxygenNote": "7.2.3",
+        "RoxygenNote": "7.3.2",
         "Language": "en-US",
         "Encoding": "UTF-8",
         "NeedsCompilation": "yes",
-        "Packaged": "2024-10-03 14:12:30 UTC; jeroen",
-        "Author": "Jeroen Ooms [aut, cre] (<https://orcid.org/0000-0002-4035-0289>),\n  John MacFarlane [cph] (Author of cmark)",
+        "Packaged": "2025-07-07 13:20:39 UTC; jeroen",
+        "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>),\n  John MacFarlane [cph] (Author of cmark)",
         "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
         "Repository": "CRAN",
-        "Date/Publication": "2024-10-04 12:40:06 UTC",
-        "Built": "R 4.4.2; x86_64-w64-mingw32; 2025-01-16 01:52:58 UTC; windows",
+        "Date/Publication": "2025-07-07 13:40:02 UTC",
+        "Built": "R 4.4.3; x86_64-w64-mingw32; 2026-04-22 00:54:42 UTC; windows",
         "Archs": "x64"
       }
     },
@@ -3137,7 +3137,7 @@
       "checksum": "dcb240655dcbf79b8706d11c8c2a169c"
     },
     "app.R": {
-      "checksum": "250db80d2a3546320a799e8f1667deba"
+      "checksum": "bfeefb1668a0c0a7c6a672ef0c496618"
     },
     "code/aj_stats.sas": {
       "checksum": "9c91bf9c8ed81886ea6ef6f7676a2b0e"
@@ -3218,13 +3218,7 @@
       "checksum": "c5f3100f1197fc7e99ac2028419b5aea"
     },
     "sim_output/cld_across.csv": {
-      "checksum": "ccff2263220e599ffceb9697efa5bfbe"
-    },
-    "sim_output/cv_by_env.csv": {
-      "checksum": "044fb69e1f3db5573e9832c8978964f0"
-    },
-    "sim_output/diagnostics_stage1.csv": {
-      "checksum": "7372217a27bf772e8b3faf5056a86e5b"
+      "checksum": "5f967c1d89b69c309257cd6f88d8799b"
     },
     "sim_output/diffs_across.csv": {
       "checksum": "67d233562574e07f6af83b348cffbcfb"
@@ -3233,19 +3227,13 @@
       "checksum": "ba18d24a7ce84cb60aee1299fcd49e86"
     },
     "sim_output/lsm_across.csv": {
-      "checksum": "eec4bf839a7fbcc56f5c06df7f674b4f"
+      "checksum": "455824259eb7d6d8acd2694637902169"
     },
     "sim_output/lsm_stage1.csv": {
       "checksum": "e5093c02ea5b993b7e7d59d5a3eabefa"
     },
-    "sim_output/model_specs_stage1.csv": {
-      "checksum": "2bc662e8dbaba4ffe32d60f70b5e8c2d"
-    },
     "sim_output/run_report.txt": {
-      "checksum": "4c3f2b6896f652de5f06afe86536918a"
-    },
-    "sim_output/stage1_model_selection.csv": {
-      "checksum": "0529f7422a29acf06f0f9bed1ba38a87"
+      "checksum": "07f1abcf1c07b8164acd136a0f81ec51"
     }
   },
   "users": null

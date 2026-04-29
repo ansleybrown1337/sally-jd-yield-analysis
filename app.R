@@ -12,6 +12,9 @@ suppressPackageStartupMessages({
 app_root <- normalizePath(".", winslash = "/", mustWork = TRUE)
 backend_env <- new.env(parent = globalenv())
 source(file.path(app_root, "code", "r_equivalent.R"), local = backend_env)
+interpretation_md_path <- file.path(app_root, "output_interpretation.md")
+example_single_site_path <- file.path(app_root, "real_data", "MilletVT2025.csv")
+example_multi_site_path <- file.path(app_root, "real_data", "UVPT 2025 Regional Multi Site Data.csv")
 
 required_cols <- c("site", "year", "env", "rep", "row", "col", "entry", "yield")
 spatial_cov_types <- c("expa", "exp", "sph", "gau")
@@ -24,7 +27,7 @@ path_label <- function(path) {
 }
 
 discover_example_files <- function() {
-  roots <- c(file.path(app_root, "real_data"), file.path(app_root, "sim_data"))
+  roots <- c(file.path(app_root, "sim_data"))
   files <- unlist(
     lapply(roots, function(root) {
       if (!dir.exists(root)) return(character(0))
@@ -33,6 +36,15 @@ discover_example_files <- function() {
     use.names = FALSE
   )
   sort(unique(files))
+}
+
+render_markdown_file_html <- function(path) {
+  if (!file.exists(path)) {
+    return(tags$p("The requested Markdown file was not found."))
+  }
+
+  md_text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  HTML(commonmark::markdown_html(md_text))
 }
 
 make_run_output_dir <- function() {
@@ -469,6 +481,19 @@ example_choices <- if (length(example_files)) {
   c("No bundled CSV files found" = "")
 }
 example_selected <- if (length(example_files)) example_files[[1]] else ""
+required_cols_tbl <- tibble::tibble(
+  column = required_cols,
+  description = c(
+    "Site name or code.",
+    "Trial year.",
+    "Environment identifier, typically site-year.",
+    "Replication identifier.",
+    "Field row coordinate.",
+    "Field column coordinate.",
+    "Entry, genotype, or variety identifier.",
+    "Observed response value to analyze."
+  )
+)
 
 theme <- bslib::bs_theme(
   version = 5,
@@ -518,11 +543,19 @@ ui <- bslib::page_sidebar(
       tags$div(class = "sidebar-stat-title", "Author"),
       tags$div(class = "sidebar-stat-subtitle", "A.J. Brown"),
       tags$div(class = "sidebar-stat-subtitle", "Agricultural Data Scientist"),
+      tags$div(style = "height: 0.35rem;"),
       tags$a(
         href = "https://sites.google.com/view/ansleyjbrown",
         target = "_blank",
         rel = "noopener noreferrer",
         "Website"
+      ),
+      tags$br(),
+      tags$a(
+        href = "https://github.com/ansleybrown1337/sally-jd-yield-analysis",
+        target = "_blank",
+        rel = "noopener noreferrer",
+        "GitHub repository"
       )
     )
   ),
@@ -806,6 +839,34 @@ ui <- bslib::page_sidebar(
       )
     ),
     bslib::nav_panel(
+      "Interpreting results",
+      bslib::card(
+        bslib::card_header("Interpretation guide"),
+        uiOutput("interpretation_guide_html")
+      )
+    ),
+    bslib::nav_panel(
+      "Data format requirements",
+      bslib::card(
+        bslib::card_header("Required columns"),
+        tags$p("Input files must be CSVs containing the following columns. The app uses these fields to define environments, field position, entries, and the response variable."),
+        DT::DTOutput("required_columns_table")
+      ),
+      bslib::layout_column_wrap(
+        width = 1/2,
+        bslib::card(
+          bslib::card_header("Single-site example: MilletVT2025.csv"),
+          tags$p("Representative single-environment layout example."),
+          DT::DTOutput("single_site_example_table")
+        ),
+        bslib::card(
+          bslib::card_header("Multi-site example: UVPT 2025 Regional Multi Site Data.csv"),
+          tags$p("Representative multi-environment layout example."),
+          DT::DTOutput("multi_site_example_table")
+        )
+      )
+    ),
+    bslib::nav_panel(
       "About this tool",
       bslib::card(
         bslib::card_header("Overview"),
@@ -839,6 +900,15 @@ ui <- bslib::page_sidebar(
             target = "_blank",
             rel = "noopener noreferrer",
             "https://sites.google.com/view/ansleyjbrown"
+          )
+        ),
+        tags$p(
+          "Source repository: ",
+          tags$a(
+            href = "https://github.com/ansleybrown1337/sally-jd-yield-analysis",
+            target = "_blank",
+            rel = "noopener noreferrer",
+            "https://github.com/ansleybrown1337/sally-jd-yield-analysis"
           )
         )
       )
@@ -1190,6 +1260,24 @@ server <- function(input, output, session) {
     state <- analysis_data()
     req(state)
     DT::datatable(build_env_summary(state$trial), options = datatable_opts, rownames = FALSE)
+  })
+
+  output$required_columns_table <- DT::renderDT({
+    DT::datatable(required_cols_tbl, options = list(dom = "t", scrollX = TRUE), rownames = FALSE)
+  })
+
+  output$interpretation_guide_html <- renderUI({
+    render_markdown_file_html(interpretation_md_path)
+  })
+
+  output$single_site_example_table <- DT::renderDT({
+    df <- read.csv(example_single_site_path, stringsAsFactors = FALSE)
+    DT::datatable(utils::head(df, 12), options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
+  })
+
+  output$multi_site_example_table <- DT::renderDT({
+    df <- read.csv(example_multi_site_path, stringsAsFactors = FALSE)
+    DT::datatable(utils::head(df, 12), options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
   })
 
   output$trial_head_table <- DT::renderDT({
