@@ -6,11 +6,59 @@ Updated: 23 April 2026
 
 This repository contains an R implementation of a two stage variety trial analysis workflow designed to mirror and improve upon an existing SAS based process used for crop variety testing. The pipeline fits within environment models first, then summarizes variety performance across environments using weighted least squares means and a one stage BLUP model.
 
-The current code supports both simulated and real input files, writes a reproducible set of tabular outputs, and can generate rendered HTML summaries from the frontend R Markdown workflow.
+The current project now includes a hosted Shiny web application, a local Shiny app, the underlying R analysis engine, and the earlier R Markdown reporting workflow. Users no longer need to know R to run the core analysis through the web interface.
+
+## Hosted web app
+
+The easiest way to use the tool is through the hosted app:
+
+[Variety Trial Explorer (Posit Connect)](https://019dd6fb-2759-d182-4e7d-ab689c7039eb.share.connect.posit.cloud/)
+
+The hosted app allows users to:
+
+- upload a correctly formatted CSV
+- run single-environment or multi-environment analyses without writing code
+- review adjusted LS-means, BLUPs, diagnostics, outliers, model-fit summaries, and run summaries
+- inspect diagnostics for individual site-years in multi-environment runs
+- download the generated output files as a ZIP archive
+
+For privacy, the bundled example selector in the app is restricted to `sim_data/` only.
+
+## Quick start options
+
+### Option 1: use the hosted app
+
+Open the Posit Connect link above, upload a CSV, and click `Run analysis`.
+
+### Option 2: run the Shiny app locally
+
+From the repository root in R or RStudio:
+
+```r
+shiny::runApp()
+```
+
+This launches the same Shiny front end locally from `app.R`.
+
+### Option 3: run the backend directly in R
+
+If you want to work from code, you can still call the backend directly:
+
+```r
+source("code/r_equivalent.R")
+analyze_trial(
+  in_csv = "sim_data/trial_sim.csv",
+  out_dir = "sim_output",
+  alpha = 0.05
+)
+```
 
 ## What is in this repository
 
 ```text
+app.R                               Shiny application entry point
+manifest.json                       Posit Connect deployment manifest
+
 code/
   r_equivalent.R                  Main R workflow
   variety_trial_frontend.Rmd      Rendered reporting frontend
@@ -28,10 +76,13 @@ sim_output/
   Example simulated outputs produced by the R workflow
 
 real_data/
-  Real input files, intended to stay out of the public repo
+  Real input files used for development and internal testing
 
 real_output/
-  Real outputs, intended to stay out of the public repo
+  Real outputs used for development and internal testing
+
+shiny_output/
+  Local outputs generated while testing the Shiny app
 
 docs/
   Background documents and collaborator materials
@@ -129,6 +180,12 @@ The workflow expects a CSV file with at least these columns:
 
 Rows with missing `yield` are excluded from model fitting.
 
+The Shiny app also includes:
+
+- an `Interpreting results` tab based on `output_interpretation.md`
+- a `Data format requirements` tab with example previews from the included CSVs
+- separate tabs for LS-means results, BLUPs, diagnostics, outliers, model-fit summaries, and run summaries
+
 ## Current default file paths in the script
 
 The main script currently defines these defaults:
@@ -166,7 +223,12 @@ The current `r_equivalent.R` workflow writes all of the following:
 
 ## Frontend reporting layer
 
-The repository also includes an R Markdown reporting frontend and rendered HTML reports. The HTML output indicates the report currently summarizes:
+The repository includes two front ends:
+
+- `app.R`: the primary Shiny application for interactive use and Posit Connect deployment
+- `code/variety_trial_frontend.Rmd`: the earlier R Markdown reporting frontend
+
+The R Markdown HTML output summarizes:
 
 - workflow overview
 - backend run and configuration summary
@@ -179,7 +241,7 @@ The repository also includes an R Markdown reporting frontend and rendered HTML 
 - backend run report
 - output descriptions
 
-This means the repository is not only an analysis engine, it also includes a report generation layer for communicating results to collaborators and reviewers.
+This means the repository is not only an analysis engine, it also includes both an interactive application layer and a report generation layer for communicating results to collaborators and reviewers.
 
 ## Key differences from the older SAS style workflow
 
@@ -204,7 +266,17 @@ These points are especially important for anyone reusing or publishing from this
 
 ## Typical usage
 
-Example run on simulated data:
+Hosted app:
+
+- [Variety Trial Explorer (Posit Connect)](https://019dd6fb-2759-d182-4e7d-ab689c7039eb.share.connect.posit.cloud/)
+
+Local Shiny app:
+
+```r
+shiny::runApp()
+```
+
+Example backend run on simulated data:
 
 ```r
 source("code/r_equivalent.R")
@@ -215,7 +287,7 @@ analyze_trial(
 )
 ```
 
-Example run on real data:
+Example backend run on real data:
 
 ```r
 source("code/r_equivalent.R")
@@ -232,13 +304,13 @@ The code and repository suggest the following near term priorities.
 
 - Implement a truly anisotropic spatial option if `expa` is meant to remain in the candidate set.
 - Decide whether `LSD_0.30` should remain for legacy compatibility or move to a historical appendix only.
-- Add a short public facing note explaining simulated versus real example content.
-- Review `docs/from sally/` before publication, since those files may still contain private collaborator material.
-- Consider adding a minimal reproducible example dataset and a one command render instruction for the frontend report.
+- Continue refining the distinction between LS-means outputs and BLUP outputs in the user interface.
+- Review any remaining real-data artifacts before broader public distribution of the repository.
+- Consider whether the legacy R Markdown frontend should remain alongside the Shiny app or be reduced to a maintenance-only path.
 
 ## Package dependencies
 
-The script loads:
+The backend and front ends currently rely on packages including:
 
 - `dplyr`
 - `tidyr`
@@ -250,3 +322,10 @@ The script loads:
 - `multcompView`
 - `broom`
 - `tibble`
+- `shiny`
+- `plotly`
+- `DT`
+- `bslib`
+- `htmltools`
+- `commonmark`
+- `rsconnect`
