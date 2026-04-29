@@ -1,2 +1,0 @@
-"env","stage","engine","fixed","random","residual","method","cov_selected"
-"MilletVT_2025","stage1","nlme::lme","yield ~ entry","~ 1 | rep","correlation = sph (nlme cor*; nugget=TRUE)","REML","sph"

@@ -1,186 +1,252 @@
 # Variety Trial Spatial Modeling Workflow
-Created by: AJ Brown, Ag Data Scientist, Agricultural Water Quality Program
-Date: 3 November 2025
+Created by: AJ Brown, Ag Data Scientist, Agricultural Water Quality Program  
+Updated: 23 April 2026
 
 ## Overview
 
-This project implements an updated spatial mixed-model workflow for analyzing multi-site and multi-year crop variety trial data. The goal is to improve statistical rigor, precision, and interpretability of entry (variety) means while preserving compatibility with existing SAS-based workflows used by CSU Crops Testing Program (via Sally Jones-Diamond).
+This repository contains an R implementation of a two stage variety trial analysis workflow designed to mirror and improve upon an existing SAS based process used for crop variety testing. The pipeline fits within environment models first, then summarizes variety performance across environments using weighted least squares means and a one stage BLUP model.
 
-The workflow addresses limitations of the previous approach by explicitly modeling spatial autocorrelation within trial fields and by harmonizing analyses across sites and years through mixed-model integration or meta-analysis.
+The current code supports both simulated and real input files, writes a reproducible set of tabular outputs, and can generate rendered HTML summaries from the frontend R Markdown workflow.
 
----
+## What is in this repository
 
-## Developer TODOs
-* Check to see if model accurately captured simulated effects.
-* Validate spatial model selection on representative sites.
-* Check out RMSE values - LSM is high?
-* Check out uncertainty calibration diagnostics.
+```text
+code/
+  r_equivalent.R                  Main R workflow
+  variety_trial_frontend.Rmd      Rendered reporting frontend
+  Allsites-variety_trial_frontend.html
+  Millet2025_trial_frontend.html
+  validation.Rmd
+  validation.html
+  sim_data.r
+  aj_stats.sas                    Legacy or comparison SAS code
 
-## Previous Approach ("Sally’s Original Code")
+sim_data/
+  Example simulated input files
 
-### Summary
+sim_output/
+  Example simulated outputs produced by the R workflow
 
-Sally’s code analyzed each site-year ("location") independently using a combination of `PROC GLM` and `PROC MIXED` in SAS. It relied on Fisher’s LSD (α = 0.30) for entry comparison and did not consistently propagate spatial variance structures across environments.
+real_data/
+  Real input files, intended to stay out of the public repo
 
-### Key Features
+real_output/
+  Real outputs, intended to stay out of the public repo
 
-* **PROC GLM:** Fit fixed-effects model (entry + replication) ignoring spatial correlation.
-* **PROC MIXED:** Added spatial covariance structure using the `repeated / type=sp(exp)` statement to reduce residual variance.
-* **Model Selection:** Compared spatial covariance forms (e.g., exponential, spherical, Gaussian) by AIC/AICc and log-likelihood improvement.
-* **Reporting:** Exported pairwise `diffs` and averaged individual LSD values to report a single mean LSD per trial.
+docs/
+  Background documents and collaborator materials
+```
 
-### Limitations
+## Workflow summary
 
-| Limitation                                    | Impact                                                                |
-| --------------------------------------------- | --------------------------------------------------------------------- |
-| Averaged LSDs lack inferential meaning        | Cannot control type I error or ensure consistent thresholds           |
-| Single environment focus                      | Cannot estimate entry × environment (G×E) effects or cross-site means |
-| Uniform α = 0.30                              | Inflated false positives, limited reproducibility                     |
-| No weighting by precision across sites        | Overweights noisy trials                                              |
-| Identical spatial parameters assumed per site | Ignores real variation in field heterogeneity                         |
+The implemented workflow has three main analytical components.
 
----
+### Stage 1, within environment analysis
 
-## New Approach (2025 Workflow)
-This new workflow reproduces the logic of Sally’s SAS variety-trial analysis but extends it to a more rigorous and transparent multi-environment framework. It first analyzes each trial site (or environment) individually using spatial mixed models that account for field position (row and column) and block structure, automatically testing multiple spatial covariance types (exponential, spherical, Gaussian, anisotropic exponential) and selecting the best by AICc. From each best-fitting model, it extracts spatially adjusted least-squares means (LS-means) and their variances—these represent each variety’s yield corrected for within-field variability. The second stage then combines these site-level LS-means across all environments using an inverse-variance meta-analysis, so sites with more precise estimates contribute proportionally more weight. Tukey-adjusted pairwise comparisons and compact letter displays (CLDs) summarize which varieties differ significantly overall. A complementary mixed model using BLUPs (Best Linear Unbiased Predictions) estimates variety effects directly across all environments in a single joint model, accounting for random environment and genotype×environment interaction. Together, this framework increases statistical power, handles spatial autocorrelation explicitly, and provides both adjusted means (for reporting) and BLUPs (for breeding insight), offering a more modern, reproducible alternative to traditional per-site ANOVA and LSD methods.
+Each environment, defined as a site year combination in `env`, is analyzed separately after dropping rows with missing yield values.
 
-### Goals
+The code attempts spatial mixed models first using `nlme::lme` with:
 
-* Increase statistical power through appropriate spatial modeling.
-* Generate comparable and reproducible least-squares means or BLUPs across sites.
-* Provide flexibility for both **fixed-effects reporting (LS-means)** and **random-effects inference (BLUPs)**.
-* Eliminate use of averaged LSDs; replace with Tukey-adjusted contrasts or compact letter displays.
-* Extend analyses to multi-site and multi-year trials with robust weighting.
+- fixed effect: `yield ~ entry`
+- random effect: `~ 1 | rep`
+- spatial correlation over field coordinates `row` and `col`
+- REML estimation
+- model comparison by AICc
 
+Candidate covariance labels are:
 
-### Key Terms
-| Term                                       | Definition                                                                                                                                                               |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Trial site**                             | A physical field location where a variety trial was planted and measured (e.g., “Fort Collins 2024”). Each site has its own soil type, management, and local conditions. |
-| **Environment (env)**                      | The combination of a trial site and year (e.g., “FortCollins_2024”). It represents a unique set of environmental conditions under which genotypes were tested.           |
-| **Replication (rep)**                      | A complete experimental block or repetition of all varieties within a trial. Replicates help estimate field variability and improve statistical power.                   |
-| **Row and Column (row, col)**              | The spatial coordinates of each plot in the field grid. Used in the spatial model to correct for field trends such as fertility or moisture gradients.                   |
-| **Entry (entry)**                          | The genotype, cultivar, or variety being evaluated (e.g., “Millet_14”).                                                                                                  |
-| **Yield (yield)**                          | The observed response variable (e.g., grain yield, biomass, protein) measured on each plot.                                                                              |
-| **Covariance structure (cov)**             | A model describing how spatial correlation declines with distance (e.g., exponential, spherical). Determines how residual variation is modeled across the grid.          |
-| **LS-mean (Least Squares Mean)**           | The adjusted mean yield per variety after accounting for random and spatial effects within a site. Equivalent to the SAS “adjusted mean.”                                |
-| **BLUP (Best Linear Unbiased Prediction)** | A prediction of a random effect (e.g., variety performance) that accounts for shrinkage toward the mean. BLUPs are often used to predict true genetic potential.         |
-| **Compact Letter Display (CLD)**           | A letter-based summary of pairwise comparisons, where varieties sharing a letter are not significantly different.                                                        |
-| **Inverse-variance weighting**             | A method that gives more weight to site means with higher precision (smaller variance) when combining results across environments.                                       |
+- `expa`
+- `exp`
+- `sph`
+- `gau`
 
-### Input Data Structure
-| Column  | Type                 | Description                                                                                |
-| ------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| `site`  | character            | Site name or code (e.g., “FortCollins”).                                                   |
-| `year`  | integer              | Year of trial (e.g., 2024).                                                                |
-| `env`   | character            | Concatenation of site and year (e.g., “FortCollins_2024”). Used as the environment factor. |
-| `rep`   | integer              | Replicate number (e.g., 1–4).                                                              |
-| `row`   | integer              | Field grid row number.                                                                     |
-| `col`   | integer              | Field grid column number.                                                                  |
-| `entry` | character or integer | Variety identifier (e.g., “M1”, “14”, “HybridA”).                                          |
-| `yield` | numeric              | Measured trait (e.g., grain yield in kg/ha or bu/ac).                                      |
+Important implementation note: in the current R code, `expa` and `exp` are both mapped to `nlme::corExp(...)`. That means the present implementation does **not** yet fit a distinct anisotropic exponential model, even though that is part of the intended conceptual design.
 
-*Example Data Header*
-| site        | year | env              | rep | row | col | entry | yield  |
-| ----------- | ---- | ---------------- | --- | --- | --- | ----- | ------ |
-| FortCollins | 2024 | FortCollins_2024 | 1   | 1   | 3   | 14    | 5023.4 |
-| FortCollins | 2024 | FortCollins_2024 | 1   | 1   | 4   | 9     | 4872.1 |
-| Fruita      | 2024 | Fruita_2024      | 2   | 3   | 7   | 18    | 4630.9 |
-| Fruita      | 2024 | Fruita_2024      | 2   | 3   | 8   | 5     | 4459.7 |
+For each environment, the workflow extracts:
 
+- LS means by entry
+- standard errors and confidence intervals
+- the selected covariance label
+- plot level fitted values and residual diagnostics
+- a model selection table covering both successful and failed fits
+- environment level RMSE and CV summaries
 
-### Stage 1 — Within-Environment Spatial Modeling
+### Fallback ladder in Stage 1
 
-Each site-year ("environment") is analyzed separately using candidate spatial covariance structures.
+If all spatial models fail for an environment, the code falls back in this order:
 
-**Models tested:**
+1. RCBD mixed model with `lme4::lmer(yield ~ entry + (1 | rep))`
+2. fixed effects model with `lm(yield ~ entry)` when the RCBD fit is not feasible or also fails
 
-* `sp(exp)` — isotropic exponential
-* `sp(expa)` — anisotropic exponential (different range per axis)
-* `sp(sph)` — spherical
-* `sp(gau)` — Gaussian
+This is an important part of the actual workflow and should be understood as part of the intended robustness of the pipeline.
 
-The model with the **lowest AICc** is selected per environment.
+### Stage 2B, across environment LS means
 
-**Output per environment:**
+If two or more environments contribute usable Stage 1 LS means with positive variances, the code combines them using inverse variance weighting.
 
-* LS-means for each entry
-* Standard errors and variance of LS-means
-* Chosen covariance type
+- with at least two environments, it uses `nlme::lme` on Stage 1 LS means with a random environment intercept and `varFixed(~ var_lsmean)`
+- with only one usable environment, it skips meta analysis and instead computes within environment LS means and Tukey summaries directly from the raw data
 
-These results are stored in a tidy dataset for downstream meta-analysis.
+The Stage 2B outputs include:
 
-### Stage 2B — Fixed-Effects Meta-Analysis Across Environments
+- overall adjusted LS means across environments
+- Tukey adjusted pairwise comparisons
+- compact letter displays
+- approximate `LSD_0.05` and `LSD_0.30` columns derived from unadjusted pairwise standard errors and degrees of freedom
 
-Stage 1 LS-means are combined across sites (and optionally years) using inverse-variance weighting.
+Those LSD columns are still being reported for continuity with historical practice, but the inferential emphasis in this workflow is on the Tukey adjusted results and compact letter displays.
 
-**Key Outputs:**
+### Stage 2A, one stage BLUP model
 
-* Environment-weighted entry LS-means
-* Tukey-adjusted pairwise comparisons (controlled FWER)
-* Optional compact letter display (CLD) for report tables
+The workflow also fits a one stage mixed model for entry BLUPs.
 
-### Stage 2A — Random-Effects MET Model (Optional)
+When multiple environments are available, the intended model is:
 
-A unified one-stage model can also estimate entry BLUPs across all environments:
+```r
+yield ~ 1 +
+  (1 | env) +
+  (1 | env:rep) +
+  (1 | entry) +
+  (1 | entry:env)
+```
 
+When only one environment is available, the BLUP model is simplified accordingly. If the mixed model fails, the code falls back to `lm(yield ~ entry)` and reports `emmeans` summaries instead.
 
-**Advantages:**
+## Input requirements
 
-* Accounts for unbalanced entries across sites/years.
-* Produces BLUPs and variance components (σ²_entry, σ²_entry×env).
-* Allows calculation of heritability and stability indices.
+The workflow expects a CSV file with at least these columns:
 
----
+| Column | Description |
+|---|---|
+| `site` | Site name or code |
+| `year` | Trial year |
+| `env` | Environment identifier, usually site plus year |
+| `rep` | Replication or block |
+| `row` | Plot row coordinate |
+| `col` | Plot column coordinate |
+| `entry` | Variety, genotype, or treatment identifier |
+| `yield` | Response variable used for modeling |
 
-## Improvements Over Previous Workflow
+Rows with missing `yield` are excluded from model fitting.
 
-| Improvement                                 | Description                                             | Benefit                                                   |
-| ------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------- |
-| **Model-based LSD replacement**             | Tukey-adjusted pairwise contrasts replace averaged LSDs | Controls experiment-wise error; interpretable letters     |
-| **AICc-based model selection**              | Automated per-site evaluation of spatial covariance     | Objectively identifies best-fitting correlation structure |
-| **Weighted meta-analysis**                  | Combines LS-means using inverse variance                | Properly balances high- vs low-precision sites            |
-| **Optional BLUP framework**                 | Random entry model spans unbalanced trials              | Increases stability and predictive reliability            |
-| **Environment-specific spatial parameters** | `group=env` option in `repeated`                        | Captures heterogeneous field variability                  |
-| **Modular SAS macros**                      | Stage 1/Stage 2 separation                              | Easy updates, reproducible code, transparent output       |
+## Current default file paths in the script
 
----
+The main script currently defines these defaults:
 
-## Desired Goals (per Sally’s notes) and Achievements
+```r
+DATA_MODE    <- "sim"
+SIM_IN_CSV   <- "sim_data/trial_sim.csv"
+SIM_OUT_DIR  <- "sim_output"
+REAL_IN_CSV  <- "real_data/MilletVT2025.csv"
+REAL_OUT_DIR <- "real_output"
+```
 
-| Goal                                | Addressed By                                             |
-| ----------------------------------- | -------------------------------------------------------- |
-| Reduce uncontrolled field variation | Spatial covariance (`sp(expa)` and AICc selection)       |
-| Improve power and precision         | Mixed-model REML estimation with spatial residuals       |
-| Facilitate clear reporting          | LS-means or BLUPs + Tukey or CLD tables                  |
-| Maintain simplicity across sites    | Unified Stage 2 analysis with inverse-variance weighting |
-| Enable cross-site inference         | Entry × environment modeling and weighting               |
+The main function is:
 
----
+```r
+analyze_trial(in_csv = SIM_IN_CSV, out_dir = SIM_OUT_DIR, alpha = 0.05)
+```
 
-## Deliverables
+## Primary outputs actually produced by the code
 
-* `lsm_stage1.csv`— per-environment LS-means (+ SE, chosen covariance)
-* `lsm_across.csv` — inverse-variance weighted across-env LS-means
-* `diffs_across.csv` — Tukey-adjusted pairwise contrasts across environments
-* `cld_across.csv` — compact letter display (groups) across environments
-* `entry_blups.csv` — entry BLUPs (and SE) from the MET model
-* **`readme.md` (this file)** — Documentation of methodology and improvements.
+The current `r_equivalent.R` workflow writes all of the following:
 
----
+| File | Description |
+|---|---|
+| `lsm_stage1.csv` | Per environment LS means and variances from Stage 1 |
+| `lsm_across.csv` | Across environment LS means, confidence intervals, and LSD helper columns |
+| `diffs_across.csv` | Pairwise contrasts from Stage 2B |
+| `cld_across.csv` | Compact letter display table |
+| `entry_blups.csv` | Entry BLUPs or fallback summaries |
+| `stage1_model_selection.csv` | Full Stage 1 model ranking table, including failures |
+| `model_specs_stage1.csv` | Explicit record of the fitted Stage 1 model specification per environment |
+| `diagnostics_stage1.csv` | Plot level fitted values, residuals, and outlier flags |
+| `cv_by_env.csv` | Environment level mean yield, RMSE, and CV |
+| `run_report.txt` | Run audit trail and decision summary |
 
-## Next Steps
+## Frontend reporting layer
 
-* Validate covariance model selection on several representative sites.
-* Integrate optional R-based variogram diagnostics for visual verification.
-* Add heritability and stability metrics for BLUP outputs.
-* Prepare publication-ready summary tables of entry means and grouping letters for extension reports.
+The repository also includes an R Markdown reporting frontend and rendered HTML reports. The HTML output indicates the report currently summarizes:
 
-## Tickets and Issues
-- [ ] Report model spec + Tukey alpha displayed everywhere
-- [ ] Add consistent covariance ranking + export model-selection table
-- [ ] Studentized residual plots + outlier shortlist (no auto-drop)
-- [ ] Residual heatmaps (selected model residuals)
-- [ ] CV reporting in final tables
+- workflow overview
+- backend run and configuration summary
+- data characteristics
+- Stage 1 model results
+- Stage 2B LS means and CLD
+- Stage 2A BLUPs
+- CV summary
+- field layout and heatmap style plots
+- backend run report
+- output descriptions
 
+This means the repository is not only an analysis engine, it also includes a report generation layer for communicating results to collaborators and reviewers.
 
+## Key differences from the older SAS style workflow
+
+Compared with a traditional per site GLM or MIXED workflow that emphasizes Fisher style LSD reporting, this implementation adds several improvements.
+
+- Spatial model comparison is automated by AICc within environment.
+- If spatial fitting fails, the code degrades gracefully rather than stopping.
+- Across environment summaries are weighted by Stage 1 uncertainty.
+- Tukey adjusted inference and compact letter displays are used for reporting.
+- A one stage BLUP model is available for breeder style interpretation.
+- Diagnostics, model specifications, and run audit files are exported explicitly.
+
+## Important current caveats
+
+These points are especially important for anyone reusing or publishing from this workflow.
+
+- `expa` is currently only a label and is not distinct from `exp` in the present implementation.
+- The code assumes a single random intercept for `rep` in Stage 1, with no explicit nested or crossed structure beyond the environment specific fits.
+- Confidence intervals and degrees of freedom come from standard approximations in `nlme`, `lme4`, and `emmeans`, and may be unstable in sparse or highly unbalanced settings.
+- The approximate LSD columns are convenience summaries, not the main inferential basis.
+- Real collaborator documents in `docs/from sally/` should be reviewed before making the repository public.
+
+## Typical usage
+
+Example run on simulated data:
+
+```r
+source("code/r_equivalent.R")
+analyze_trial(
+  in_csv = "sim_data/trial_sim.csv",
+  out_dir = "sim_output",
+  alpha = 0.05
+)
+```
+
+Example run on real data:
+
+```r
+source("code/r_equivalent.R")
+analyze_trial(
+  in_csv = "real_data/MilletVT2025.csv",
+  out_dir = "real_output",
+  alpha = 0.05
+)
+```
+
+## Suggested next development steps
+
+The code and repository suggest the following near term priorities.
+
+- Implement a truly anisotropic spatial option if `expa` is meant to remain in the candidate set.
+- Decide whether `LSD_0.30` should remain for legacy compatibility or move to a historical appendix only.
+- Add a short public facing note explaining simulated versus real example content.
+- Review `docs/from sally/` before publication, since those files may still contain private collaborator material.
+- Consider adding a minimal reproducible example dataset and a one command render instruction for the frontend report.
+
+## Package dependencies
+
+The script loads:
+
+- `dplyr`
+- `tidyr`
+- `purrr`
+- `nlme`
+- `lme4`
+- `emmeans`
+- `ggplot2`
+- `multcompView`
+- `broom`
+- `tibble`
