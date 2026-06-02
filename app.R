@@ -97,7 +97,7 @@ build_stage2_plot_data <- function(result) {
       hover = paste0(
         "Entry: ", entry,
         "<br>Adjusted mean: ", round(estimate, 2),
-        "<br>95% simultaneous CI: [", round(lower.CL, 2), ", ", round(upper.CL, 2), "]",
+        "<br>95% CI: [", round(lower.CL, 2), ", ", round(upper.CL, 2), "]",
         ifelse(is.na(stderr), "", paste0("<br>SE: ", round(stderr, 3))),
         ifelse(is.na(df), "", paste0("<br>df: ", round(df, 1))),
         ifelse(group == "", "", paste0("<br>CLD: ", group))

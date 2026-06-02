@@ -474,14 +474,7 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
 
   emm <- emmeans::emmeans(fit, ~ entry)
 
-  # Use simultaneous mean intervals so the plotted bars are multiplicity-adjusted.
-  # Tukey is for pairwise differences, not for the mean intervals themselves.
-  emm_summary <- tryCatch(
-    as.data.frame(summary(emm, infer = c(TRUE, FALSE), level = 1 - alpha, adjust = "mvt")),
-    error = function(e) as.data.frame(summary(emm, infer = c(TRUE, FALSE), level = 1 - alpha, adjust = "sidak"))
-  )
-
-  lsm_tab <- emm_summary %>%
+  lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
     dplyr::rename(estimate = emmean, stderr = SE) %>%
     dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
 
@@ -556,14 +549,7 @@ stage2_single_env <- function(trial_df, env_id, alpha = 0.05) {
 
   emm <- emmeans::emmeans(fit, ~ entry)
 
-  # Use simultaneous mean intervals so the plotted bars are multiplicity-adjusted.
-  # Tukey is reserved for the pairwise comparisons that generate the CLD letters.
-  emm_summary <- tryCatch(
-    as.data.frame(summary(emm, infer = c(TRUE, FALSE), level = 1 - alpha, adjust = "mvt")),
-    error = function(e) as.data.frame(summary(emm, infer = c(TRUE, FALSE), level = 1 - alpha, adjust = "sidak"))
-  )
-
-  lsm_tab <- emm_summary %>%
+  lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
     dplyr::rename(estimate = emmean, stderr = SE) %>%
     dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
 
