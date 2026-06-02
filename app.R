@@ -815,13 +815,18 @@ ui <- bslib::page_sidebar(
           DT::DTOutput("env_summary_table")
         ),
         bslib::card(
-          bslib::card_header("Input preview"),
-          DT::DTOutput("trial_head_table")
+          full_screen = TRUE,
+          bslib::card_header("Backend run report"),
+          verbatimTextOutput("run_report", placeholder = TRUE)
         )
-      ),
+      )
+    ),
+    bslib::nav_panel(
+      "Input data",
       bslib::card(
-        bslib::card_header("Backend run report"),
-        verbatimTextOutput("run_report", placeholder = TRUE)
+        full_screen = TRUE,
+        bslib::card_header("Input data"),
+        DT::DTOutput("trial_head_table")
       )
     ),
     bslib::nav_panel(
@@ -1274,7 +1279,12 @@ server <- function(input, output, session) {
   output$trial_head_table <- DT::renderDT({
     state <- analysis_data()
     req(state)
-    DT::datatable(utils::head(state$trial, 10), options = datatable_opts, rownames = FALSE)
+    DT::datatable(
+      state$trial,
+      options = c(datatable_opts, list(pageLength = 25, scrollX = TRUE)),
+      rownames = FALSE,
+      filter = "top"
+    )
   })
 
   output$run_report <- renderText({
