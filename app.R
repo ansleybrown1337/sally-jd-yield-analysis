@@ -662,7 +662,7 @@ ui <- bslib::page_sidebar(
       "Adjusted means",
       tags$div(
         class = "status-summary",
-        tags$p("This tab reports adjusted LS-means and significance groupings from the LS-means workflow. It is separate from the one-stage BLUP analysis shown later.")
+        tags$p("This tab shows adjusted LS-means from the Stage 1 to Stage 2 workflow. The error bars are confidence intervals for each adjusted mean at the user-selected alpha level, and the letters are Tukey-adjusted significance groupings: entries that share a letter are not significantly different at that alpha level. This is separate from the one-stage BLUP analysis shown later.")
       ),
       bslib::layout_column_wrap(
         width = 1/2,
