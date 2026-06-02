@@ -15,28 +15,11 @@ source(file.path(app_root, "code", "r_equivalent.R"), local = backend_env)
 interpretation_md_path <- file.path(app_root, "output_interpretation.md")
 example_single_site_path <- file.path(app_root, "real_data", "MilletVT2025.csv")
 example_multi_site_path <- file.path(app_root, "real_data", "UVPT 2025 Regional Multi Site Data.csv")
+bundled_example_path <- file.path(app_root, "sim_data", "trial_sim.csv")
 
 required_cols <- c("site", "year", "env", "rep", "row", "col", "entry", "yield")
 spatial_cov_types <- c("expa", "exp", "sph", "gau")
 fallback_output_root <- file.path(tempdir(), "sally-yield-analysis-output")
-
-path_label <- function(path) {
-  clean_path <- gsub("\\\\", "/", path)
-  clean_root <- gsub("\\\\", "/", app_root)
-  sub(paste0("^", clean_root, "/?"), "", clean_path)
-}
-
-discover_example_files <- function() {
-  roots <- c(file.path(app_root, "sim_data"))
-  files <- unlist(
-    lapply(roots, function(root) {
-      if (!dir.exists(root)) return(character(0))
-      list.files(root, pattern = "\\.csv$", full.names = TRUE)
-    }),
-    use.names = FALSE
-  )
-  sort(unique(files))
-}
 
 render_markdown_file_html <- function(path) {
   if (!file.exists(path)) {
@@ -474,13 +457,6 @@ make_qq_plot <- function(df_env) {
 }
 
 datatable_opts <- list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE)
-example_files <- discover_example_files()
-example_choices <- if (length(example_files)) {
-  stats::setNames(example_files, vapply(example_files, path_label, character(1)))
-} else {
-  c("No bundled CSV files found" = "")
-}
-example_selected <- if (length(example_files)) example_files[[1]] else ""
 required_cols_tbl <- tibble::tibble(
   column = required_cols,
   description = c(
@@ -523,7 +499,15 @@ ui <- bslib::page_sidebar(
     ),
     conditionalPanel(
       condition = "input.data_source === 'bundled'",
-      selectInput("example_file", "Bundled file", choices = example_choices, selected = example_selected)
+      tags$div(
+        class = "sidebar-stat",
+        tags$div(class = "sidebar-stat-title", "Bundled example"),
+        tags$div(class = "sidebar-stat-value", "trial_sim.csv"),
+        tags$div(
+          class = "sidebar-stat-subtitle",
+          "Simulated yield trial with 6 site-years, 20 entries, 4 reps per environment, spatial field variation, and about 20% of entries missing within each environment."
+        )
+      )
     ),
     conditionalPanel(
       condition = "input.data_source === 'upload'",
@@ -667,10 +651,12 @@ ui <- bslib::page_sidebar(
   ),
   div(
     class = "hero-banner",
-    h2("Interactive front end for the existing spatial workflow"),
-    p("Run the current Stage 1 and Stage 2 models, inspect adjusted means with Plotly, and switch site-years in diagnostics without re-rendering a static HTML report.")
+    h2("Explore spatial variety trial results"),
+    p("Upload a field-trial CSV or use the bundled example to run the spatial workflow, compare adjusted means and BLUPs, and inspect environment-level diagnostics in one place.")
   ),
   bslib::navset_card_tab(
+    id = "main_tabs",
+    selected = "About this tool",
     height = "auto",
     bslib::nav_panel(
       "Adjusted means",
@@ -870,12 +856,13 @@ ui <- bslib::page_sidebar(
       "About this tool",
       bslib::card(
         bslib::card_header("Overview"),
-        tags$p("This Shiny app is an interactive front end for a spatial mixed-model workflow for crop variety trial analysis. It combines per-environment spatial fitting, across-environment adjusted means, and one-stage BLUP estimation in one place.")
+        tags$p("This app helps you analyze crop variety trial data with the existing spatial mixed-model workflow. It fits per-environment spatial models, summarizes adjusted means across environments, and reports one-stage BLUPs so you can move from raw trial data to interpretable results in one workspace."),
+        tags$p("Use it to compare entry performance, review model diagnostics, and inspect flagged outliers without generating a separate static report.")
       ),
       bslib::card(
         bslib::card_header("How to use"),
         tags$ol(
-          tags$li("Upload a CSV or choose a bundled example."),
+          tags$li("Upload a CSV or choose the bundled example (see ", tags$strong("Data format requirements"), " for CSV format details)."),
           tags$li("Click ", tags$code("Run analysis"), " to fit the workflow."),
           tags$li("Use the ", tags$strong("Adjusted means"), ", ", tags$strong("BLUPs"), ", ", tags$strong("Diagnostics"), ", and ", tags$strong("Outliers"), " tabs to inspect results."),
           tags$li("Download the generated outputs as a ZIP file from the sidebar.")
@@ -924,8 +911,8 @@ server <- function(input, output, session) {
       req(input$trial_file$datapath)
       return(input$trial_file$datapath)
     }
-    req(input$example_file)
-    input$example_file
+    req(file.exists(bundled_example_path))
+    bundled_example_path
   })
 
   observeEvent(input$run_analysis, {
@@ -957,6 +944,7 @@ server <- function(input, output, session) {
         ))
       })
 
+      updateTabsetPanel(session, "main_tabs", selected = "Adjusted means")
       showNotification("Analysis complete.", type = "message", duration = 4)
     }, error = function(e) {
       showNotification(conditionMessage(e), type = "error", duration = NULL)
