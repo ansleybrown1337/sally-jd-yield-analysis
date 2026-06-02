@@ -13,8 +13,6 @@ app_root <- normalizePath(".", winslash = "/", mustWork = TRUE)
 backend_env <- new.env(parent = globalenv())
 source(file.path(app_root, "code", "r_equivalent.R"), local = backend_env)
 interpretation_md_path <- file.path(app_root, "output_interpretation.md")
-example_single_site_path <- file.path(app_root, "real_data", "MilletVT2025.csv")
-example_multi_site_path <- file.path(app_root, "real_data", "UVPT 2025 Regional Multi Site Data.csv")
 bundled_example_path <- file.path(app_root, "sim_data", "trial_sim.csv")
 
 required_cols <- c("site", "year", "env", "rep", "row", "col", "entry", "yield")
@@ -846,13 +844,13 @@ ui <- bslib::page_sidebar(
       bslib::layout_column_wrap(
         width = 1/2,
         bslib::card(
-          bslib::card_header("Single-site example: MilletVT2025.csv"),
-          tags$p("Representative single-environment layout example."),
+          bslib::card_header("Single-site example"),
+          tags$p("Example rows from one environment in the bundled simulated dataset."),
           DT::DTOutput("single_site_example_table")
         ),
         bslib::card(
-          bslib::card_header("Multi-site example: UVPT 2025 Regional Multi Site Data.csv"),
-          tags$p("Representative multi-environment layout example."),
+          bslib::card_header("Multi-site example"),
+          tags$p("Example rows from the bundled simulated dataset with multiple environments included."),
           DT::DTOutput("multi_site_example_table")
         )
       )
@@ -1267,12 +1265,14 @@ server <- function(input, output, session) {
   })
 
   output$single_site_example_table <- DT::renderDT({
-    df <- read.csv(example_single_site_path, stringsAsFactors = FALSE)
-    DT::datatable(utils::head(df, 12), options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
+    df <- read.csv(bundled_example_path, stringsAsFactors = FALSE)
+    env_id <- sort(unique(df$env))[1]
+    df_one_env <- df[df$env == env_id, , drop = FALSE]
+    DT::datatable(utils::head(df_one_env, 12), options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
   })
 
   output$multi_site_example_table <- DT::renderDT({
-    df <- read.csv(example_multi_site_path, stringsAsFactors = FALSE)
+    df <- read.csv(bundled_example_path, stringsAsFactors = FALSE)
     DT::datatable(utils::head(df, 12), options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
   })
 
