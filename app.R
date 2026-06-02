@@ -1273,7 +1273,14 @@ server <- function(input, output, session) {
 
   output$multi_site_example_table <- DT::renderDT({
     df <- read.csv(bundled_example_path, stringsAsFactors = FALSE)
-    DT::datatable(utils::head(df, 12), options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
+    env_ids <- sort(unique(df$env))
+    df_multi_env <- do.call(
+      rbind,
+      lapply(env_ids[seq_len(min(4, length(env_ids)))], function(env_id) {
+        utils::head(df[df$env == env_id, , drop = FALSE], 3)
+      })
+    )
+    DT::datatable(df_multi_env, options = c(datatable_opts, list(scrollY = "320px")), rownames = FALSE)
   })
 
   output$trial_head_table <- DT::renderDT({
