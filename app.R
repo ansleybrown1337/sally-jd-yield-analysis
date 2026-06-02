@@ -652,7 +652,7 @@ ui <- bslib::page_sidebar(
   div(
     class = "hero-banner",
     h2("Explore spatial variety trial results"),
-    p("Upload a field-trial CSV or use the bundled example to run the spatial workflow, compare adjusted means and BLUPs, and inspect environment-level diagnostics in one place.")
+    p("Use this tool to analyze crop variety trials laid out in reps, rows, and columns, whether you have one site-year or many. It helps you compare entries, account for field-position effects, and review adjusted means, BLUPs, and diagnostics in one place.")
   ),
   bslib::navset_card_tab(
     id = "main_tabs",
@@ -856,8 +856,10 @@ ui <- bslib::page_sidebar(
       "About this tool",
       bslib::card(
         bslib::card_header("Overview"),
-        tags$p("This app helps you analyze crop variety trial data with the existing spatial mixed-model workflow. It fits per-environment spatial models, summarizes adjusted means across environments, and reports one-stage BLUPs so you can move from raw trial data to interpretable results in one workspace."),
-        tags$p("Use it to compare entry performance, review model diagnostics, and inspect flagged outliers without generating a separate static report.")
+        tags$p("This app is for crop variety trial data collected from field layouts with replications, rows, and columns. You can use it for a single site-year trial or for multiple site-years combined in one file, as long as the data follow the required CSV structure."),
+        tags$p("After you run the analysis, the app helps you compare variety performance with adjusted means, review one-stage BLUP results, and check diagnostics that account for field-position patterns and possible outliers."),
+        tags$p("Stage 1 fits each site-year separately so the app can account for field-position effects within that environment and produce adjusted entry means plus diagnostics. Stage 2 then uses those Stage 1 results in one of two ways: if you uploaded multiple site-years, it combines the adjusted means across environments so entries can be compared across site-years; if you uploaded only one site-year, it skips the across-environment step and reports that trial on its own."),
+        tags$p("BLUPs are also reported as a separate one-stage mixed-model analysis. They are useful for ranking entries, but they answer a different question than the adjusted means shown from the Stage 1 to Stage 2 workflow.")
       ),
       bslib::card(
         bslib::card_header("How to use"),
@@ -873,7 +875,8 @@ ui <- bslib::page_sidebar(
         tags$ul(
           tags$li("Input data must include columns: ", tags$code("site, year, env, rep, row, col, entry, yield"), "."),
           tags$li("Rows with missing ", tags$code("yield"), " values are excluded from model fitting."),
-          tags$li("Stage 1 fits spatial covariance models where possible and falls back to RCBD or fixed-effects ANOVA if needed."),
+          tags$li("Stage 1 is the per-environment fitting step. It uses spatial covariance models where possible and falls back to RCBD or fixed-effects ANOVA if needed."),
+          tags$li("Stage 2 is the adjusted-means summary step. With multiple environments, it combines Stage 1 adjusted means across site-years; with one environment, it reports that environment directly."),
           tags$li("Across-environment LS-means and BLUPs answer different questions and should be interpreted separately."),
           tags$li("Flagged outliers are diagnostic cues based on large normalized residuals, not automatic deletions.")
         )
