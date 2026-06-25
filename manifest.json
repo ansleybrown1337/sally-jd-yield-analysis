@@ -1658,27 +1658,30 @@
       "Repository": "https://cloud.r-project.org",
       "description": {
         "Package": "lme4",
-        "Version": "1.1-36",
+        "Version": "2.0-1",
         "Title": "Linear Mixed-Effects Models using 'Eigen' and S4",
-        "Authors@R": "c(\n    person(\"Douglas\",\"Bates\", role=\"aut\",\n\tcomment=c(ORCID=\"0000-0001-8316-9503\")),\n    person(\"Martin\",\"Maechler\", role=\"aut\",\n\tcomment=c(ORCID=\"0000-0002-8685-9910\")),\n    person(\"Ben\",\"Bolker\",email=\"bbolker+lme4@gmail.com\", role=c(\"aut\",\"cre\"),\n\tcomment=c(ORCID=\"0000-0002-2127-0443\")),\n    person(\"Steven\",\"Walker\",role=\"aut\",\n\tcomment=c(ORCID=\"0000-0002-4394-9078\")),\n    person(\"Rune Haubo Bojesen\",\"Christensen\", role=\"ctb\",\n\tcomment=c(ORCID=\"0000-0002-4494-3399\")),\n    person(\"Henrik\",\"Singmann\", role=\"ctb\",\n\tcomment=c(ORCID=\"0000-0002-4842-3657\")),\n    person(\"Bin\", \"Dai\", role=\"ctb\"),\n    person(\"Fabian\", \"Scheipl\", role=\"ctb\",\n\tcomment=c(ORCID=\"0000-0001-8172-3603\")),\n    person(\"Gabor\", \"Grothendieck\", role=\"ctb\"),\n    person(\"Peter\", \"Green\", role=\"ctb\",\n\tcomment=c(ORCID=\"0000-0002-0238-9852\")),\n    person(\"John\", \"Fox\", role=\"ctb\"),\n    person(\"Alexander\", \"Bauer\", role=\"ctb\"),\n    person(\"Pavel N.\", \"Krivitsky\", role=c(\"ctb\",\"cph\"), comment=c(ORCID=\"0000-0002-9101-3362\",\n    \"shared copyright on simulate.formula\")),\n    person(\"Emi\", \"Tanaka\", role = \"ctb\",\n      comment = c(ORCID=\"0000-0002-1455-259X\")),\n      person(\"Mikael\", \"Jagan\", role = \"ctb\",\n      comment = c(ORCID=\"0000-0002-3542-2938\"))\n      )",
-        "Description": "Fit linear and generalized linear mixed-effects models.\n    The models and their components are represented using S4 classes and\n    methods.  The core computational algorithms are implemented using the\n    'Eigen' C++ library for numerical linear algebra and 'RcppEigen' \"glue\".",
-        "Depends": "R (>= 3.6.0), Matrix, methods, stats",
-        "LinkingTo": "Rcpp (>= 0.10.5), RcppEigen (>= 0.3.3.9.4), Matrix (>=\n1.2-3)",
-        "Imports": "graphics, grid, splines, utils, parallel, MASS, lattice, boot,\nnlme (>= 3.1-123), minqa (>= 1.1.15), nloptr (>= 1.0.4),\nreformulas (>= 0.3.0)",
-        "Suggests": "knitr, rmarkdown, MEMSS, testthat (>= 0.8.1), ggplot2,\nmlmRev, optimx (>= 2013.8.6), gamm4, pbkrtest, HSAUR3,\nnumDeriv, car, dfoptim, mgcv, statmod, rr2, semEff, tibble,\nmerDeriv",
+        "Authors@R": "\n    c(person(\"Douglas\", \"Bates\", role = \"aut\",\n             comment = c(ORCID = \"0000-0001-8316-9503\")),\n      person(\"Martin\", \"Maechler\", role = \"aut\",\n             comment = c(ORCID = \"0000-0002-8685-9910\")),\n      person(\"Ben\", \"Bolker\", role = c(\"cre\", \"aut\"),\n             email = \"bbolker+lme4@gmail.com\",\n             comment = c(ORCID = \"0000-0002-2127-0443\")),\n      person(\"Steven\", \"Walker\", role = \"aut\",\n             comment = c(ORCID = \"0000-0002-4394-9078\")),\n      person(\"Rune Haubo Bojesen\", \"Christensen\", role = \"ctb\",\n             comment = c(ORCID = \"0000-0002-4494-3399\")),\n      person(\"Henrik\", \"Singmann\", role = \"ctb\",\n             comment = c(ORCID = \"0000-0002-4842-3657\")),\n      person(\"Bin\", \"Dai\", role = \"ctb\"),\n      person(\"Fabian\", \"Scheipl\", role = \"ctb\",\n             comment = c(ORCID = \"0000-0001-8172-3603\")),\n      person(\"Gabor\", \"Grothendieck\", role = \"ctb\"),\n      person(\"Peter\", \"Green\", role = \"ctb\",\n             comment = c(ORCID = \"0000-0002-0238-9852\")),\n      person(\"John\", \"Fox\", role = \"ctb\"),\n      person(\"Alexander\", \"Bauer\", role = \"ctb\"),\n      person(\"Pavel N.\", \"Krivitsky\", role = c(\"ctb\", \"cph\"),\n             comment = c(ORCID = \"0000-0002-9101-3362\",\n                         \"shared copyright on simulate.formula\")),\n      person(\"Emi\", \"Tanaka\", role = \"ctb\",\n             comment = c(ORCID = \"0000-0002-1455-259X\")),\n      person(\"Mikael\", \"Jagan\", role = \"aut\",\n             comment = c(ORCID = \"0000-0002-3542-2938\")),\n      person(\"Ross D.\", \"Boylan\", role = \"ctb\",\n             comment = c(ORCID = \"0009-0003-4123-8090\")),\n      person(\"Anna\", \"Ly\", role = \"aut\",\n             comment = c(ORCID = \"0000-0002-0210-0342\")))",
+        "Description": "\n    Fit linear and generalized linear mixed-effects models.  The\n    models and their components are represented using S4 classes and\n    methods.  The core computational algorithms are implemented using\n    the 'Eigen' C++ library for numerical linear algebra and\n    'RcppEigen' \"glue\".",
+        "Depends": "R (>= 3.6), Matrix, methods, stats",
+        "LinkingTo": "Matrix (>= 1.5-0), Rcpp (>= 0.10.5), RcppEigen (>=\n0.3.3.9.4)",
+        "Imports": "MASS, Rdpack, boot, graphics, grid, lattice, minqa (>=\n1.1.15), nlme (>= 3.1-123), nloptr (>= 1.0.4), parallel,\nreformulas (>= 0.4.3.1), rlang, splines, utils",
+        "Suggests": "HSAUR3, MEMSS, car, dfoptim, gamm4, ggplot2, glmmTMB, knitr,\nmerDeriv, mgcv, mlmRev, numDeriv, optimx (>= 2013.8.6),\npbkrtest, rmarkdown, rr2, semEff, statmod, testthat (>= 0.8.1),\ntibble",
+        "Enhances": "DHARMa, performance",
+        "RdMacros": "Rdpack",
         "VignetteBuilder": "knitr",
         "LazyData": "yes",
         "License": "GPL (>= 2)",
         "URL": "https://github.com/lme4/lme4/",
         "BugReports": "https://github.com/lme4/lme4/issues",
         "Encoding": "UTF-8",
+        "RoxygenNote": "7.3.3",
         "NeedsCompilation": "yes",
-        "Packaged": "2025-01-10 22:13:57 UTC; bolker",
-        "Author": "Douglas Bates [aut] (<https://orcid.org/0000-0001-8316-9503>),\n  Martin Maechler [aut] (<https://orcid.org/0000-0002-8685-9910>),\n  Ben Bolker [aut, cre] (<https://orcid.org/0000-0002-2127-0443>),\n  Steven Walker [aut] (<https://orcid.org/0000-0002-4394-9078>),\n  Rune Haubo Bojesen Christensen [ctb]\n    (<https://orcid.org/0000-0002-4494-3399>),\n  Henrik Singmann [ctb] (<https://orcid.org/0000-0002-4842-3657>),\n  Bin Dai [ctb],\n  Fabian Scheipl [ctb] (<https://orcid.org/0000-0001-8172-3603>),\n  Gabor Grothendieck [ctb],\n  Peter Green [ctb] (<https://orcid.org/0000-0002-0238-9852>),\n  John Fox [ctb],\n  Alexander Bauer [ctb],\n  Pavel N. Krivitsky [ctb, cph] (<https://orcid.org/0000-0002-9101-3362>,\n    shared copyright on simulate.formula),\n  Emi Tanaka [ctb] (<https://orcid.org/0000-0002-1455-259X>),\n  Mikael Jagan [ctb] (<https://orcid.org/0000-0002-3542-2938>)",
+        "Packaged": "2026-03-04 20:19:49 UTC; bolker",
+        "Author": "Douglas Bates [aut] (ORCID: <https://orcid.org/0000-0001-8316-9503>),\n  Martin Maechler [aut] (ORCID: <https://orcid.org/0000-0002-8685-9910>),\n  Ben Bolker [cre, aut] (ORCID: <https://orcid.org/0000-0002-2127-0443>),\n  Steven Walker [aut] (ORCID: <https://orcid.org/0000-0002-4394-9078>),\n  Rune Haubo Bojesen Christensen [ctb] (ORCID:\n    <https://orcid.org/0000-0002-4494-3399>),\n  Henrik Singmann [ctb] (ORCID: <https://orcid.org/0000-0002-4842-3657>),\n  Bin Dai [ctb],\n  Fabian Scheipl [ctb] (ORCID: <https://orcid.org/0000-0001-8172-3603>),\n  Gabor Grothendieck [ctb],\n  Peter Green [ctb] (ORCID: <https://orcid.org/0000-0002-0238-9852>),\n  John Fox [ctb],\n  Alexander Bauer [ctb],\n  Pavel N. Krivitsky [ctb, cph] (ORCID:\n    <https://orcid.org/0000-0002-9101-3362>, shared copyright on\n    simulate.formula),\n  Emi Tanaka [ctb] (ORCID: <https://orcid.org/0000-0002-1455-259X>),\n  Mikael Jagan [aut] (ORCID: <https://orcid.org/0000-0002-3542-2938>),\n  Ross D. Boylan [ctb] (ORCID: <https://orcid.org/0009-0003-4123-8090>),\n  Anna Ly [aut] (ORCID: <https://orcid.org/0000-0002-0210-0342>)",
         "Maintainer": "Ben Bolker <bbolker+lme4@gmail.com>",
         "Repository": "CRAN",
-        "Date/Publication": "2025-01-11 15:40:06 UTC",
-        "Built": "R 4.4.2; x86_64-w64-mingw32; 2025-01-16 00:52:19 UTC; windows",
+        "Date/Publication": "2026-03-05 17:30:02 UTC",
+        "Built": "R 4.4.3; x86_64-w64-mingw32; 2026-04-22 02:33:42 UTC; windows",
         "Archs": "x64"
       }
     },
@@ -2300,23 +2303,24 @@
       "description": {
         "Package": "reformulas",
         "Title": "Machinery for Processing Random Effect Formulas",
-        "Version": "0.4.0",
-        "Authors@R": "\n    person(given = \"Ben\",\n           family = \"Bolker\",\n           role = c(\"aut\", \"cre\"),\n           email = \"bolker@mcmaster.ca\",\n\t   \t           comment=c(ORCID=\"0000-0002-2127-0443\"))",
+        "Version": "0.4.4",
+        "Authors@R": "\n   c(\n    person(given = \"Ben\",\n\tfamily = \"Bolker\",\n        role = c(\"aut\", \"cre\"),\n        email = \"bolker@mcmaster.ca\",\n\tcomment=c(ORCID=\"0000-0002-2127-0443\")),\n    person(\"Anna\", \"Ly\", role = \"ctb\",\n       comment = c(ORCID = \"0000-0002-0210-0342\"))\n      )",
         "Description": "Takes formulas including random-effects components (formatted as in 'lme4', 'glmmTMB', etc.) and processes them. Includes various helper functions.",
         "URL": "https://github.com/bbolker/reformulas",
         "License": "GPL-3",
         "Encoding": "UTF-8",
         "Imports": "stats, methods, Matrix, Rdpack",
         "RdMacros": "Rdpack",
-        "Suggests": "lme4, tinytest",
-        "RoxygenNote": "7.3.2",
+        "Suggests": "lme4, tinytest, glmmTMB, Formula",
+        "RoxygenNote": "7.3.3",
+        "Config/testthat/edition": "3",
         "NeedsCompilation": "no",
-        "Packaged": "2024-11-02 16:40:00 UTC; bolker",
-        "Author": "Ben Bolker [aut, cre] (<https://orcid.org/0000-0002-2127-0443>)",
+        "Packaged": "2026-02-02 00:36:37 UTC; bolker",
+        "Author": "Ben Bolker [aut, cre] (ORCID: <https://orcid.org/0000-0002-2127-0443>),\n  Anna Ly [ctb] (ORCID: <https://orcid.org/0000-0002-0210-0342>)",
         "Maintainer": "Ben Bolker <bolker@mcmaster.ca>",
         "Repository": "CRAN",
-        "Date/Publication": "2024-11-03 05:30:11 UTC",
-        "Built": "R 4.4.2; ; 2025-01-16 02:54:52 UTC; windows"
+        "Date/Publication": "2026-02-02 06:30:25 UTC",
+        "Built": "R 4.4.3; ; 2026-04-22 02:07:07 UTC; windows"
       }
     },
     "rlang": {
@@ -3143,7 +3147,7 @@
       "checksum": "9c91bf9c8ed81886ea6ef6f7676a2b0e"
     },
     "code/r_equivalent.R": {
-      "checksum": "38ba5f8d8d1b4118739824df66ffc291"
+      "checksum": "c831c7e6a19cd6cc6d08415d3a0a6c3e"
     },
     "code/sim_data.r": {
       "checksum": "3207a28b08e8e75956f19369d4593401"
