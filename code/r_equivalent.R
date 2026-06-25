@@ -190,13 +190,40 @@ AICc_nlme <- function(fit) {
   AIC_v + (2 * k_tot * (k_tot + 1)) / (n - k_tot - 1)
 }
 
+standardize_emmeans_summary <- function(df) {
+  nm <- names(df)
+  nm <- sub("^lower\\.CL\\.$", "lower.CL", nm)
+  nm <- sub("^upper\\.CL\\.$", "upper.CL", nm)
+  names(df) <- nm
+
+  if (!"estimate" %in% names(df) && "emmean" %in% names(df)) df$estimate <- df$emmean
+  if (!"stderr" %in% names(df) && "SE" %in% names(df)) df$stderr <- df$SE
+  if (!"df" %in% names(df)) df$df <- NA_real_
+
+  lower_candidates <- c("lower.CL", "asymp.LCL", "lower.HPD", "LCL")
+  upper_candidates <- c("upper.CL", "asymp.UCL", "upper.HPD", "UCL")
+  lower_name <- lower_candidates[lower_candidates %in% names(df)][1]
+  upper_name <- upper_candidates[upper_candidates %in% names(df)][1]
+
+  if (is.na(lower_name) || is.na(upper_name)) {
+    stop(
+      "Could not identify confidence interval columns in emmeans output. Available columns: ",
+      paste(names(df), collapse = ", ")
+    )
+  }
+
+  df$lower.CL <- df[[lower_name]]
+  df$upper.CL <- df[[upper_name]]
+  df
+}
+
 # =========================================================
 # Helper: LS-means extractor (works for lme and lmer, lm)
 # =========================================================
 lsm_from_fit <- function(fit, alpha = 0.05) {
   emm <- emmeans(fit, ~ entry)
   as.data.frame(summary(emm, infer = c(TRUE, TRUE), level = 1 - alpha)) %>%
-    dplyr::rename(estimate = emmean, stderr = SE) %>%
+    standardize_emmeans_summary() %>%
     dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
 }
 
@@ -561,12 +588,13 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
     warning("Stage 2 meta-analysis: < 2 entries. Reporting marginal mean only.")
     fit <- lm(estimate ~ 1, data = lsm2, weights = 1 / var_lsmean)
     emm <- emmeans::emmeans(fit, ~ 1)
-    base_mean <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha))
+    base_mean <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
+      standardize_emmeans_summary()
 
     lsm_tab <- data.frame(
       entry     = levels(lsm2$entry),
-      estimate  = base_mean$emmean,
-      stderr    = base_mean$SE,
+      estimate  = base_mean$estimate,
+      stderr    = base_mean$stderr,
       df        = base_mean$df,
       lower.CL  = base_mean$lower.CL,
       upper.CL  = base_mean$upper.CL,
@@ -597,7 +625,7 @@ stage2_meta <- function(lsm_stage1, alpha = 0.05) {
   emm <- emmeans::emmeans(fit, ~ entry)
 
   lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
-    dplyr::rename(estimate = emmean, stderr = SE) %>%
+    standardize_emmeans_summary() %>%
     dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
 
   pairs_tukey <- tryCatch(as.data.frame(summary(pairs(emm, adjust = "tukey"))), error = function(e) NULL)
@@ -672,7 +700,7 @@ stage2_single_env <- function(trial_df, env_id, alpha = 0.05) {
   emm <- emmeans::emmeans(fit, ~ entry)
 
   lsm_tab <- as.data.frame(summary(emm, infer = TRUE, level = 1 - alpha)) %>%
-    dplyr::rename(estimate = emmean, stderr = SE) %>%
+    standardize_emmeans_summary() %>%
     dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL)
 
   pairs_tukey <- tryCatch(as.data.frame(summary(pairs(emm, adjust = "tukey"))), error = function(e) NULL)
