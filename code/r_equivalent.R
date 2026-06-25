@@ -39,6 +39,128 @@ suppressPackageStartupMessages({
 
 alpha   <- 0.05
 covlist <- c("expa","exp","sph","gau")  # exp(a) placeholder, exp, spherical, Gaussian
+required_trial_cols <- c("site", "year", "env", "rep", "row", "col", "entry", "yield")
+missing_value_tokens <- c("", "NA", "N/A", "NULL", "null", ".")
+
+# =========================================================
+# Helper: input cleanup and validation
+# =========================================================
+normalize_missing_values <- function(trial_df) {
+  trial_df %>%
+    dplyr::mutate(
+      dplyr::across(where(is.character), ~ {
+        x <- trimws(.x)
+        dplyr::if_else(x %in% missing_value_tokens, NA_character_, x)
+      })
+    )
+}
+
+clean_trial_data_with_report <- function(trial_df) {
+  missing_cols <- setdiff(required_trial_cols, names(trial_df))
+  if (length(missing_cols)) {
+    stop("Input file is missing required columns: ", paste(missing_cols, collapse = ", "))
+  }
+
+  raw_n_rows <- nrow(trial_df)
+  raw_n_cols <- ncol(trial_df)
+  raw_names <- names(trial_df)
+
+  normalized <- normalize_missing_values(trial_df)
+  extra_cols <- setdiff(names(normalized), required_trial_cols)
+  extra_blank_cols <- extra_cols[vapply(normalized[extra_cols], function(x) all(is.na(x)), logical(1))]
+  extra_nonblank_cols <- setdiff(extra_cols, extra_blank_cols)
+
+  required_normalized <- normalized[, required_trial_cols, drop = FALSE]
+  blank_required_rows <- apply(required_normalized, 1, function(row) all(is.na(row)))
+
+  yield_before <- required_normalized$yield
+  yield_after <- suppressWarnings(as.numeric(yield_before))
+  yield_conversion_na <- sum(!is.na(yield_before) & is.na(yield_after))
+
+  row_before <- required_normalized$row
+  row_after <- suppressWarnings(as.numeric(row_before))
+  row_conversion_na <- sum(!is.na(row_before) & is.na(row_after))
+
+  col_before <- required_normalized$col
+  col_after <- suppressWarnings(as.numeric(col_before))
+  col_conversion_na <- sum(!is.na(col_before) & is.na(col_after))
+
+  trial_clean <- required_normalized %>%
+    dplyr::filter(!if_all(dplyr::all_of(required_trial_cols), is.na)) %>%
+    dplyr::mutate(
+      site = as.character(site),
+      year = as.character(year),
+      env = as.character(env),
+      rep = as.character(rep),
+      entry = as.character(entry),
+      row = suppressWarnings(as.numeric(row)),
+      col = suppressWarnings(as.numeric(col)),
+      yield = suppressWarnings(as.numeric(yield))
+    )
+
+  if (!nrow(trial_clean)) {
+    stop("Input file has no non-empty trial rows after cleaning blank rows.")
+  }
+
+  usable <- !is.na(trial_clean$yield)
+  required_for_model <- c("env", "rep", "entry")
+  bad_required <- names(which(vapply(
+    trial_clean[usable, required_for_model, drop = FALSE],
+    function(x) any(is.na(x)),
+    logical(1)
+  )))
+
+  if (length(bad_required)) {
+    stop(
+      "Rows with non-missing yield must also have non-missing values for: ",
+      paste(bad_required, collapse = ", ")
+    )
+  }
+
+  if (!any(usable)) {
+    stop("Input file has no non-missing numeric yield values.")
+  }
+
+  env_summary <- trial_clean %>%
+    dplyr::group_by(env) %>%
+    dplyr::summarise(
+      n_rows = dplyr::n(),
+      n_model_rows = sum(!is.na(yield)),
+      n_missing_yield = sum(is.na(yield)),
+      n_rep = dplyr::n_distinct(rep[!is.na(rep)]),
+      n_entry = dplyr::n_distinct(entry[!is.na(entry)]),
+      .groups = "drop"
+    )
+
+  report <- list(
+    raw_n_rows = raw_n_rows,
+    raw_n_cols = raw_n_cols,
+    cleaned_n_rows = nrow(trial_clean),
+    cleaned_n_cols = ncol(trial_clean),
+    blank_rows_dropped = sum(blank_required_rows),
+    extra_cols_ignored = length(extra_cols),
+    extra_blank_cols_ignored = length(extra_blank_cols),
+    extra_nonblank_cols_ignored = length(extra_nonblank_cols),
+    extra_col_names = extra_cols,
+    extra_nonblank_col_names = extra_nonblank_cols,
+    yield_missing = sum(is.na(trial_clean$yield)),
+    rows_excluded_from_model = sum(is.na(trial_clean$yield)),
+    yield_conversion_na = yield_conversion_na,
+    row_conversion_na = row_conversion_na,
+    col_conversion_na = col_conversion_na,
+    n_env = dplyr::n_distinct(trial_clean$env[!is.na(trial_clean$env)]),
+    n_rep = dplyr::n_distinct(trial_clean$rep[!is.na(trial_clean$rep)]),
+    n_entry = dplyr::n_distinct(trial_clean$entry[!is.na(trial_clean$entry)]),
+    raw_col_names = raw_names,
+    env_summary = env_summary
+  )
+
+  list(data = trial_clean, report = report)
+}
+
+clean_trial_data <- function(trial_df) {
+  clean_trial_data_with_report(trial_df)$data
+}
 
 # =========================================================
 # Helper: correlation structure for nlme spatial models
@@ -702,7 +824,7 @@ analyze_trial <- function(in_csv = SIM_IN_CSV, out_dir = SIM_OUT_DIR, alpha = 0.
   out_cv       <- file.path(out_dir, "cv_by_env.csv")
 
   trial <- read.csv(in_csv, stringsAsFactors = FALSE)
-  stopifnot(all(c("site","year","env","rep","row","col","entry","yield") %in% names(trial)))
+  trial <- clean_trial_data(trial)
 
   s1 <- analyze_stage1(trial, covlist, alpha = alpha)
   lsm_stage1   <- s1$lsm_stage1

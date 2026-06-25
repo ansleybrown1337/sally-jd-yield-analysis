@@ -66,6 +66,123 @@ build_env_summary <- function(trial_df) {
     )
 }
 
+make_check_metric <- function(title, value, subtitle) {
+  tags$div(
+    class = "check-metric",
+    tags$div(class = "check-metric-title", title),
+    tags$div(class = "check-metric-value", value),
+    tags$div(class = "check-metric-subtitle", subtitle)
+  )
+}
+
+build_data_check_summary <- function(check) {
+  if (is.null(check)) {
+    return(tags$p("Upload a CSV to run the data check before analysis."))
+  }
+
+  report <- check$report
+  extra_note <- if (report$extra_cols_ignored > 0L) {
+    paste0(
+      report$extra_cols_ignored,
+      " extra column(s) ignored; ",
+      report$extra_blank_cols_ignored,
+      " were fully blank."
+    )
+  } else {
+    "No extra columns detected."
+  }
+
+  tagList(
+    tags$div(
+      class = "workflow-steps",
+      tags$div(class = "workflow-step workflow-step-complete", "1. Upload"),
+      tags$div(class = "workflow-step workflow-step-active", "2. Check data"),
+      tags$div(class = "workflow-step", "3. Run analysis")
+    ),
+    tags$div(
+      class = "next-action",
+      tags$strong("Next step: "),
+      "review the cleaning notes below, then click ",
+      tags$code("Run analysis"),
+      " in the sidebar."
+    ),
+    tags$div(
+      class = "check-grid",
+      make_check_metric(
+        "Rows",
+        paste0(report$raw_n_rows, " -> ", report$cleaned_n_rows),
+        paste0(report$blank_rows_dropped, " fully blank row(s) dropped")
+      ),
+      make_check_metric(
+        "Columns",
+        paste0(report$raw_n_cols, " -> ", report$cleaned_n_cols),
+        extra_note
+      ),
+      make_check_metric(
+        "Model rows",
+        report$cleaned_n_rows - report$rows_excluded_from_model,
+        paste0(report$rows_excluded_from_model, " row(s) excluded because yield is missing")
+      ),
+      make_check_metric(
+        "Environments",
+        report$n_env,
+        paste0(report$n_rep, " rep(s), ", report$n_entry, " entry level(s)")
+      )
+    )
+  )
+}
+
+build_data_check_actions <- function(check) {
+  if (is.null(check)) {
+    return(tags$p("No checked data are available yet."))
+  }
+
+  report <- check$report
+  action_rows <- tibble::tibble(
+    check = c(
+      "Required columns",
+      "Blank rows",
+      "Extra columns",
+      "Missing yield",
+      "Non-numeric row values",
+      "Non-numeric column values",
+      "Non-numeric yield values"
+    ),
+    result = c(
+      "Passed",
+      ifelse(report$blank_rows_dropped > 0L, "Cleaned", "Passed"),
+      ifelse(report$extra_cols_ignored > 0L, "Ignored", "Passed"),
+      ifelse(report$yield_missing > 0L, "Review", "Passed"),
+      ifelse(report$row_conversion_na > 0L, "Review", "Passed"),
+      ifelse(report$col_conversion_na > 0L, "Review", "Passed"),
+      ifelse(report$yield_conversion_na > 0L, "Review", "Passed")
+    ),
+    detail = c(
+      paste(required_cols, collapse = ", "),
+      paste0(report$blank_rows_dropped, " fully blank row(s) dropped."),
+      if (report$extra_cols_ignored > 0L) {
+        paste0(
+          report$extra_cols_ignored,
+          " extra column(s) ignored",
+          if (length(report$extra_nonblank_col_names)) {
+            paste0("; nonblank ignored: ", paste(report$extra_nonblank_col_names, collapse = ", "))
+          } else {
+            "."
+          }
+        )
+      } else {
+        "No extra columns found."
+      },
+      paste0(report$yield_missing, " cleaned row(s) have missing yield and will not be modeled."),
+      paste0(report$row_conversion_na, " value(s) became NA when row was converted to numeric."),
+      paste0(report$col_conversion_na, " value(s) became NA when col was converted to numeric."),
+      paste0(report$yield_conversion_na, " value(s) became NA when yield was converted to numeric.")
+    )
+  )
+
+  action_rows
+}
+
 build_stage2_plot_data <- function(result) {
   lsm <- result$lsm_across %>%
     tibble::as_tibble() %>%
@@ -513,6 +630,9 @@ ui <- bslib::page_sidebar(
     ),
     numericInput("alpha", "Alpha", value = 0.05, min = 0.001, max = 0.50, step = 0.01),
     actionButton("run_analysis", "Run analysis", class = "btn-primary"),
+    downloadButton("download_clean_data", "Download cleaned CSV", class = "btn-outline-secondary"),
+    helpText("Upload a file, review the Data check tab, then run the analysis. The analysis uses the cleaned data shown in the app."),
+    tags$div(style = "height: 0.5rem;"),
     downloadButton("download_outputs", "Download outputs (.zip)", class = "btn-primary"),
     tags$div(style = "height: 0.5rem;"),
     downloadButton("download_report", "Download run report", class = "btn-outline-secondary"),
@@ -633,6 +753,72 @@ ui <- bslib::page_sidebar(
       .status-summary-list li {
         margin-bottom: 0.35rem;
       }
+      .workflow-steps {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      .workflow-step {
+        padding: 0.45rem 0.7rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.68);
+        border: 1px solid rgba(114, 98, 75, 0.18);
+        color: #52606d;
+        font-weight: 700;
+        font-size: 0.9rem;
+      }
+      .workflow-step-active {
+        background: #1f5d50;
+        border-color: #1f5d50;
+        color: #fff;
+      }
+      .workflow-step-complete {
+        background: rgba(31, 93, 80, 0.12);
+        border-color: rgba(31, 93, 80, 0.32);
+        color: #1f5d50;
+      }
+      .next-action {
+        padding: 0.85rem 1rem;
+        margin-bottom: 1rem;
+        border-left: 5px solid #1f5d50;
+        border-radius: 10px;
+        background: rgba(31, 93, 80, 0.10);
+        color: #1f2933;
+        font-size: 1.03rem;
+      }
+      .next-action code {
+        font-weight: 700;
+        color: #1f5d50;
+      }
+      .check-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 0.75rem;
+      }
+      .check-metric {
+        padding: 0.85rem 0.95rem;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.74);
+        border: 1px solid rgba(114, 98, 75, 0.14);
+      }
+      .check-metric-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #52606d;
+      }
+      .check-metric-value {
+        margin-top: 0.2rem;
+        font-size: 1.55rem;
+        font-weight: 700;
+        color: #1f5d50;
+        line-height: 1.1;
+      }
+      .check-metric-subtitle {
+        margin-top: 0.25rem;
+        color: #5b646d;
+        font-size: 0.9rem;
+      }
       .btn-primary {
         width: 100%;
         font-weight: 700;
@@ -656,6 +842,92 @@ ui <- bslib::page_sidebar(
     id = "main_tabs",
     selected = "About this tool",
     height = "auto",
+    bslib::nav_panel(
+      "About this tool",
+      bslib::card(
+        bslib::card_header("How to use"),
+        tags$div(
+          class = "workflow-steps",
+          tags$div(class = "workflow-step workflow-step-active", "1. Prepare data"),
+          tags$div(class = "workflow-step", "2. Run analysis"),
+          tags$div(class = "workflow-step", "3. Review results"),
+          tags$div(class = "workflow-step", "4. Check diagnostics")
+        ),
+        tags$ol(
+          tags$li("Upload a CSV or choose the bundled example."),
+          tags$li("Review the ", tags$strong("Data check"), " tab to see blank rows, extra columns, missing yields, and the cleaned data that will be analyzed."),
+          tags$li("Set the alpha level in the sidebar, then click ", tags$code("Run analysis"), "."),
+          tags$li("Review adjusted means, BLUPs, diagnostics, model fit, and the run summary."),
+          tags$li("Download the cleaned CSV, run report, or output ZIP from the sidebar if needed.")
+        )
+      ),
+      bslib::card(
+        bslib::card_header("Purpose"),
+        tags$p("This app is for crop variety trial data collected from field layouts with replications, rows, and columns. You can use it for a single site-year trial or for multiple site-years combined in one file, as long as the data follow the required CSV structure."),
+        tags$p("After you run the analysis, the app helps you compare variety performance with adjusted means, review one-stage BLUP results, and check diagnostics that account for field-position patterns and possible outliers."),
+        tags$p("Stage 1 fits each site-year separately so the app can account for field-position effects within that environment and produce adjusted entry means plus diagnostics. Stage 2 then uses those Stage 1 results in one of two ways: if you uploaded multiple site-years, it combines the adjusted means across environments so entries can be compared across site-years; if you uploaded only one site-year, it skips the across-environment step and reports that trial on its own."),
+        tags$p("BLUPs are also reported as a separate one-stage mixed-model analysis. They are useful for ranking entries, but they answer a different question than the adjusted means shown from the Stage 1 to Stage 2 workflow.")
+      ),
+      bslib::card(
+        bslib::card_header("Important assumptions"),
+        tags$ul(
+          tags$li("Input data must include columns: ", tags$code("site, year, env, rep, row, col, entry, yield"), "."),
+          tags$li("Rows with missing ", tags$code("yield"), " values are excluded from model fitting."),
+          tags$li("Stage 1 is the per-environment fitting step. It uses spatial covariance models where possible and falls back to RCBD or fixed-effects ANOVA if needed."),
+          tags$li("Stage 2 is the adjusted-means summary step. With multiple environments, it combines Stage 1 adjusted means across site-years; with one environment, it reports that environment directly."),
+          tags$li("Across-environment LS-means and BLUPs answer different questions and should be interpreted separately."),
+          tags$li("Flagged outliers are diagnostic cues based on large normalized residuals, not automatic deletions.")
+        )
+      )
+    ),
+    bslib::nav_panel(
+      "Data format requirements",
+      bslib::card(
+        bslib::card_header("Required columns"),
+        tags$p("Input files must be CSVs containing the following columns. The app uses these fields to define environments, field position, entries, and the response variable."),
+        DT::DTOutput("required_columns_table")
+      ),
+      bslib::layout_column_wrap(
+        width = 1/2,
+        bslib::card(
+          bslib::card_header("Single-site example"),
+          tags$p("Example rows from one environment in the bundled simulated dataset."),
+          DT::DTOutput("single_site_example_table")
+        ),
+        bslib::card(
+          bslib::card_header("Multi-site example"),
+          tags$p("Example rows from the bundled simulated dataset with multiple environments included."),
+          DT::DTOutput("multi_site_example_table")
+        )
+      )
+    ),
+    bslib::nav_panel(
+      "Data check",
+      bslib::card(
+        bslib::card_header("Upload check"),
+        uiOutput("data_check_summary")
+      ),
+      bslib::layout_column_wrap(
+        width = 1/2,
+        bslib::card(
+          bslib::card_header("Cleaning actions"),
+          DT::DTOutput("data_check_actions_table")
+        ),
+        bslib::card(
+          bslib::card_header("Environment summary before modeling"),
+          DT::DTOutput("data_check_env_table")
+        )
+      )
+    ),
+    bslib::nav_panel(
+      "Input data",
+      bslib::card(
+        full_screen = TRUE,
+        bslib::card_header("Input data"),
+        tags$p("This table shows the cleaned data used for the analysis after blank rows, extra columns, and missing-value cleanup are applied."),
+        DT::DTOutput("trial_head_table")
+      )
+    ),
     bslib::nav_panel(
       "Adjusted means",
       tags$div(
@@ -681,6 +953,26 @@ ui <- bslib::page_sidebar(
             selected = "lsm"
           ),
           uiOutput("adjusted_results_ui")
+        )
+      )
+    ),
+    bslib::nav_panel(
+      "BLUPs",
+      tags$div(
+        class = "status-summary",
+        tags$p("This tab reports entry BLUPs from the one-stage mixed model. BLUPs are shrunken random-effect estimates and should be interpreted separately from the adjusted LS-means in the earlier tabs."),
+        tags$p("A separate BLUP diagnostics tab is not shown here because the current backend exports BLUP estimates and standard errors, but not a dedicated BLUP diagnostic dataset.")
+      ),
+      bslib::layout_column_wrap(
+        width = 1/2,
+        bslib::card(
+          full_screen = TRUE,
+          bslib::card_header("Entry BLUPs"),
+          uiOutput("blup_plot_ui")
+        ),
+        bslib::card(
+          bslib::card_header("BLUP results"),
+          DT::DTOutput("blup_table")
         )
       )
     ),
@@ -781,26 +1073,6 @@ ui <- bslib::page_sidebar(
       )
     ),
     bslib::nav_panel(
-      "BLUPs",
-      tags$div(
-        class = "status-summary",
-        tags$p("This tab reports entry BLUPs from the one-stage mixed model. BLUPs are shrunken random-effect estimates and should be interpreted separately from the adjusted LS-means in the earlier tabs."),
-        tags$p("A separate BLUP diagnostics tab is not shown here because the current backend exports BLUP estimates and standard errors, but not a dedicated BLUP diagnostic dataset.")
-      ),
-      bslib::layout_column_wrap(
-        width = 1/2,
-        bslib::card(
-          full_screen = TRUE,
-          bslib::card_header("Entry BLUPs"),
-          uiOutput("blup_plot_ui")
-        ),
-        bslib::card(
-          bslib::card_header("BLUP results"),
-          DT::DTOutput("blup_table")
-        )
-      )
-    ),
-    bslib::nav_panel(
       "Run summary",
       bslib::card(
         bslib::card_header("Detected model workflow"),
@@ -820,90 +1092,10 @@ ui <- bslib::page_sidebar(
       )
     ),
     bslib::nav_panel(
-      "Input data",
-      bslib::card(
-        full_screen = TRUE,
-        bslib::card_header("Input data"),
-        DT::DTOutput("trial_head_table")
-      )
-    ),
-    bslib::nav_panel(
       "Interpreting results",
       bslib::card(
         bslib::card_header("Interpretation guide"),
         uiOutput("interpretation_guide_html")
-      )
-    ),
-    bslib::nav_panel(
-      "Data format requirements",
-      bslib::card(
-        bslib::card_header("Required columns"),
-        tags$p("Input files must be CSVs containing the following columns. The app uses these fields to define environments, field position, entries, and the response variable."),
-        DT::DTOutput("required_columns_table")
-      ),
-      bslib::layout_column_wrap(
-        width = 1/2,
-        bslib::card(
-          bslib::card_header("Single-site example"),
-          tags$p("Example rows from one environment in the bundled simulated dataset."),
-          DT::DTOutput("single_site_example_table")
-        ),
-        bslib::card(
-          bslib::card_header("Multi-site example"),
-          tags$p("Example rows from the bundled simulated dataset with multiple environments included."),
-          DT::DTOutput("multi_site_example_table")
-        )
-      )
-    ),
-    bslib::nav_panel(
-      "About this tool",
-      bslib::card(
-        bslib::card_header("Overview"),
-        tags$p("This app is for crop variety trial data collected from field layouts with replications, rows, and columns. You can use it for a single site-year trial or for multiple site-years combined in one file, as long as the data follow the required CSV structure."),
-        tags$p("After you run the analysis, the app helps you compare variety performance with adjusted means, review one-stage BLUP results, and check diagnostics that account for field-position patterns and possible outliers."),
-        tags$p("Stage 1 fits each site-year separately so the app can account for field-position effects within that environment and produce adjusted entry means plus diagnostics. Stage 2 then uses those Stage 1 results in one of two ways: if you uploaded multiple site-years, it combines the adjusted means across environments so entries can be compared across site-years; if you uploaded only one site-year, it skips the across-environment step and reports that trial on its own."),
-        tags$p("BLUPs are also reported as a separate one-stage mixed-model analysis. They are useful for ranking entries, but they answer a different question than the adjusted means shown from the Stage 1 to Stage 2 workflow.")
-      ),
-      bslib::card(
-        bslib::card_header("How to use"),
-        tags$ol(
-          tags$li("Upload a CSV or choose the bundled example (see ", tags$strong("Data format requirements"), " for CSV format details)."),
-          tags$li("Click ", tags$code("Run analysis"), " to fit the workflow."),
-          tags$li("Use the ", tags$strong("Adjusted means"), ", ", tags$strong("BLUPs"), ", ", tags$strong("Diagnostics"), ", and ", tags$strong("Outliers"), " tabs to inspect results."),
-          tags$li("Download the generated outputs as a ZIP file from the sidebar.")
-        )
-      ),
-      bslib::card(
-        bslib::card_header("Important assumptions"),
-        tags$ul(
-          tags$li("Input data must include columns: ", tags$code("site, year, env, rep, row, col, entry, yield"), "."),
-          tags$li("Rows with missing ", tags$code("yield"), " values are excluded from model fitting."),
-          tags$li("Stage 1 is the per-environment fitting step. It uses spatial covariance models where possible and falls back to RCBD or fixed-effects ANOVA if needed."),
-          tags$li("Stage 2 is the adjusted-means summary step. With multiple environments, it combines Stage 1 adjusted means across site-years; with one environment, it reports that environment directly."),
-          tags$li("Across-environment LS-means and BLUPs answer different questions and should be interpreted separately."),
-          tags$li("Flagged outliers are diagnostic cues based on large normalized residuals, not automatic deletions.")
-        )
-      ),
-      bslib::card(
-        bslib::card_header("Authorship"),
-        tags$p(
-          "A.J. Brown, Agricultural Data Scientist. More information: ",
-          tags$a(
-            href = "https://sites.google.com/view/ansleyjbrown",
-            target = "_blank",
-            rel = "noopener noreferrer",
-            "https://sites.google.com/view/ansleyjbrown"
-          )
-        ),
-        tags$p(
-          "Source repository: ",
-          tags$a(
-            href = "https://github.com/ansleybrown1337/sally-jd-yield-analysis",
-            target = "_blank",
-            rel = "noopener noreferrer",
-            "https://github.com/ansleybrown1337/sally-jd-yield-analysis"
-          )
-        )
       )
     )
   )
@@ -911,6 +1103,7 @@ ui <- bslib::page_sidebar(
 
 server <- function(input, output, session) {
   analysis_data <- reactiveVal(NULL)
+  input_check <- reactiveVal(NULL)
 
   chosen_input_path <- reactive({
     if (identical(input$data_source, "upload")) {
@@ -921,17 +1114,61 @@ server <- function(input, output, session) {
     bundled_example_path
   })
 
+  prepare_input_check <- function(path, source_name) {
+    raw <- read.csv(path, stringsAsFactors = FALSE)
+    checked <- backend_env$clean_trial_data_with_report(raw)
+    clean_path <- tempfile(pattern = "cleaned-trial-", fileext = ".csv")
+    write.csv(checked$data, clean_path, row.names = FALSE, na = "")
+
+    list(
+      raw = raw,
+      trial = checked$data,
+      report = checked$report,
+      source_name = source_name,
+      input_path = path,
+      clean_path = clean_path
+    )
+  }
+
+  observeEvent(input$data_source, {
+    analysis_data(NULL)
+    if (identical(input$data_source, "bundled")) {
+      tryCatch({
+        input_check(prepare_input_check(bundled_example_path, basename(bundled_example_path)))
+        updateTabsetPanel(session, "main_tabs", selected = "Data check")
+      }, error = function(e) {
+        input_check(NULL)
+        showNotification(conditionMessage(e), type = "error", duration = NULL)
+      })
+    } else if (is.null(input$trial_file)) {
+      input_check(NULL)
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$trial_file, {
+    analysis_data(NULL)
+    req(input$trial_file$datapath)
+
+    tryCatch({
+      input_check(prepare_input_check(input$trial_file$datapath, input$trial_file$name))
+      updateTabsetPanel(session, "main_tabs", selected = "Data check")
+      showNotification("Data check complete. Review the Data check tab, then run the analysis.", type = "message", duration = 5)
+    }, error = function(e) {
+      input_check(NULL)
+      showNotification(conditionMessage(e), type = "error", duration = NULL)
+    })
+  }, ignoreInit = TRUE)
+
   observeEvent(input$run_analysis, {
     tryCatch({
-      in_csv <- chosen_input_path()
-      trial <- read.csv(in_csv, stringsAsFactors = FALSE)
-      missing_cols <- setdiff(required_cols, names(trial))
-      if (length(missing_cols)) {
-        stop(
-          "Input file is missing required columns: ",
-          paste(missing_cols, collapse = ", ")
-        )
+      check <- input_check()
+      if (is.null(check)) {
+        check <- prepare_input_check(chosen_input_path(), basename(chosen_input_path()))
+        input_check(check)
       }
+
+      in_csv <- check$clean_path
+      trial <- check$trial
 
       out_dir <- make_run_output_dir()
 
@@ -945,7 +1182,9 @@ server <- function(input, output, session) {
         analysis_data(list(
           result = result,
           trial = trial,
-          input_path = in_csv,
+          input_path = check$input_path,
+          clean_input_path = in_csv,
+          input_check = check,
           out_dir = normalizePath(out_dir, winslash = "/", mustWork = FALSE)
         ))
       })
@@ -982,6 +1221,57 @@ server <- function(input, output, session) {
       file.copy(state$result$report_path, file, overwrite = TRUE)
     }
   )
+
+  output$download_clean_data <- downloadHandler(
+    filename = function() {
+      check <- input_check()
+      base_name <- if (is.null(check) || is.null(check$source_name)) {
+        "trial"
+      } else {
+        tools::file_path_sans_ext(basename(check$source_name))
+      }
+      paste0(base_name, "-cleaned.csv")
+    },
+    content = function(file) {
+      check <- input_check()
+      req(check)
+      write.csv(check$trial, file, row.names = FALSE, na = "")
+    }
+  )
+
+  output$data_check_summary <- renderUI({
+    build_data_check_summary(input_check())
+  })
+
+  output$data_check_actions_table <- DT::renderDT({
+    check <- input_check()
+    if (is.null(check)) {
+      return(DT::datatable(
+        tibble::tibble(check = character(), result = character(), detail = character()),
+        options = list(dom = "t"),
+        rownames = FALSE
+      ))
+    }
+
+    DT::datatable(
+      build_data_check_actions(check),
+      options = list(pageLength = 10, scrollX = TRUE, dom = "tip"),
+      rownames = FALSE
+    )
+  })
+
+  output$data_check_env_table <- DT::renderDT({
+    check <- input_check()
+    if (is.null(check)) {
+      return(DT::datatable(
+        tibble::tibble(env = character(), n_rows = integer(), n_model_rows = integer()),
+        options = list(dom = "t"),
+        rownames = FALSE
+      ))
+    }
+
+    DT::datatable(check$report$env_summary, options = datatable_opts, rownames = FALSE)
+  })
 
   current_env_data <- reactive({
     state <- analysis_data()
