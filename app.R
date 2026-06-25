@@ -256,7 +256,10 @@ build_stage2_plot_data <- function(result) {
       )
     ) %>%
     dplyr::arrange(estimate) %>%
-    dplyr::mutate(entry = factor(entry, levels = entry))
+    dplyr::mutate(
+      entry = as.character(entry),
+      y_pos = dplyr::row_number()
+    )
 }
 
 build_blup_plot_data <- function(result) {
@@ -276,7 +279,10 @@ build_blup_plot_data <- function(result) {
       )
     ) %>%
     dplyr::arrange(BLUP) %>%
-    dplyr::mutate(entry = factor(entry, levels = entry))
+    dplyr::mutate(
+      entry = as.character(entry),
+      y_pos = dplyr::row_number()
+    )
 }
 
 make_metric_card <- function(title, value, subtitle) {
@@ -347,10 +353,14 @@ make_across_plot <- function(plot_df) {
     return(plotly::plotly_empty(type = "scatter", mode = "markers"))
   }
 
+  if (!"y_pos" %in% names(plot_df)) {
+    plot_df <- plot_df %>% dplyr::mutate(y_pos = dplyr::row_number())
+  }
+
   p <- plotly::plot_ly(
     data = plot_df,
     x = ~estimate,
-    y = ~entry,
+    y = ~y_pos,
     type = "scatter",
     mode = "markers",
     marker = list(size = 10, color = "#9b5d2e"),
@@ -374,7 +384,7 @@ make_across_plot <- function(plot_df) {
       plotly::add_trace(
         data = label_df,
         x = label_df$upper.CL,
-        y = label_df$entry,
+        y = label_df$y_pos,
         text = label_df$group,
         type = "scatter",
         mode = "text",
@@ -390,7 +400,14 @@ make_across_plot <- function(plot_df) {
     plotly::layout(
       title = list(text = "Across-environment adjusted means"),
       xaxis = list(title = "Adjusted mean yield", zeroline = FALSE),
-      yaxis = list(title = "Entry", automargin = TRUE),
+      yaxis = list(
+        title = "Entry",
+        tickmode = "array",
+        tickvals = plot_df$y_pos,
+        ticktext = plot_df$entry,
+        range = c(0.5, nrow(plot_df) + 0.5),
+        automargin = TRUE
+      ),
       margin = list(l = 110, r = 80, t = 60, b = 60),
       paper_bgcolor = "rgba(0,0,0,0)",
       plot_bgcolor = "rgba(0,0,0,0)"
@@ -402,10 +419,14 @@ make_blup_plot <- function(plot_df) {
     return(plotly::plotly_empty(type = "scatter", mode = "markers"))
   }
 
+  if (!"y_pos" %in% names(plot_df)) {
+    plot_df <- plot_df %>% dplyr::mutate(y_pos = dplyr::row_number())
+  }
+
   plotly::plot_ly(
     data = plot_df,
     x = ~BLUP,
-    y = ~entry,
+    y = ~y_pos,
     type = "scatter",
     mode = "markers",
     marker = list(size = 10, color = "#1f5d50"),
@@ -425,7 +446,14 @@ make_blup_plot <- function(plot_df) {
     plotly::layout(
       title = list(text = "Entry BLUPs"),
       xaxis = list(title = "BLUP", zeroline = TRUE, zerolinecolor = "#7d8590"),
-      yaxis = list(title = "Entry", automargin = TRUE),
+      yaxis = list(
+        title = "Entry",
+        tickmode = "array",
+        tickvals = plot_df$y_pos,
+        ticktext = plot_df$entry,
+        range = c(0.5, nrow(plot_df) + 0.5),
+        automargin = TRUE
+      ),
       margin = list(l = 110, r = 50, t = 60, b = 60),
       paper_bgcolor = "rgba(0,0,0,0)",
       plot_bgcolor = "rgba(0,0,0,0)"

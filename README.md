@@ -1,6 +1,6 @@
 # Variety Trial Spatial Modeling Workflow
 Created by: AJ Brown, Ag Data Scientist, Agricultural Water Quality Program  
-Updated: 23 April 2026
+Updated: 25 June 2026
 
 ## Overview
 
@@ -23,6 +23,18 @@ The hosted app allows users to:
 - download the generated output files as a ZIP archive
 
 For privacy, the bundled example selector in the app is restricted to `sim_data/` only.
+
+### Deployment and package compatibility
+
+The hosted app depends on several modeling packages that need to remain compatible with one another, especially `lme4`, `reformulas`, `Matrix`, `nlme`, and `emmeans`. In June 2026, a Posit deployment exposed an `lme4`/`reformulas` mismatch that produced `could not find function "safe_length"` for a single-environment uploaded dataset even though the same dataset ran locally. The fix was to update the dependency snapshot and redeploy with a compatible package pair.
+
+When model-package versions are updated, run the Haswell single-environment test file and the bundled multi-environment example both locally and on Posit. Regenerate `manifest.json` with:
+
+```r
+rsconnect::writeManifest(appDir = ".")
+```
+
+Commit the updated manifest with the code changes. If Posit fails while local runs succeed, use the sidebar error-log download in the app to compare the live package versions and failing call against the local session.
 
 ## Quick start options
 
