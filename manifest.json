@@ -3137,13 +3137,13 @@
       "checksum": "dcb240655dcbf79b8706d11c8c2a169c"
     },
     "app.R": {
-      "checksum": "bfeefb1668a0c0a7c6a672ef0c496618"
+      "checksum": "5560794a1cb78de8373f0b851f0b771a"
     },
     "code/aj_stats.sas": {
       "checksum": "9c91bf9c8ed81886ea6ef6f7676a2b0e"
     },
     "code/r_equivalent.R": {
-      "checksum": "592a5de3184adc3f0ca310f3cb4fd0f7"
+      "checksum": "66ae898c133a38c3317075940506f9da"
     },
     "code/sim_data.r": {
       "checksum": "3207a28b08e8e75956f19369d4593401"
@@ -3164,7 +3164,7 @@
       "checksum": "96c5537fde746f0253eebf5dbecb376f"
     },
     "README.md": {
-      "checksum": "52d67129ee13e0d64e0b5219d377c0af"
+      "checksum": "e33549f622d1975f478583c314923718"
     },
     "real_data/MilletVT2025.csv": {
       "checksum": "f619aea98a817b04612fd9cf143f7803"
