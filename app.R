@@ -66,6 +66,43 @@ build_env_summary <- function(trial_df) {
     )
 }
 
+package_version_or_na <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) return("not installed")
+  as.character(utils::packageVersion(pkg))
+}
+
+build_error_log_text <- function(stage, error, context = list()) {
+  context_lines <- if (length(context)) {
+    paste0("  ", names(context), ": ", unlist(context, use.names = FALSE))
+  } else {
+    "  <none>"
+  }
+
+  call_text <- conditionCall(error)
+  call_text <- if (is.null(call_text)) "<not available>" else paste(deparse(call_text), collapse = "\n")
+
+  paste(
+    "Sally JD Yield Analysis - error log",
+    paste0("Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
+    paste0("Stage: ", stage),
+    paste0("Error class: ", paste(class(error), collapse = ", ")),
+    paste0("Message: ", conditionMessage(error)),
+    "Call:",
+    call_text,
+    "Context:",
+    paste(context_lines, collapse = "\n"),
+    "Package versions:",
+    paste0("  R: ", as.character(getRversion())),
+    paste0("  shiny: ", package_version_or_na("shiny")),
+    paste0("  bslib: ", package_version_or_na("bslib")),
+    paste0("  lme4: ", package_version_or_na("lme4")),
+    paste0("  reformulas: ", package_version_or_na("reformulas")),
+    paste0("  nlme: ", package_version_or_na("nlme")),
+    paste0("  emmeans: ", package_version_or_na("emmeans")),
+    sep = "\n"
+  )
+}
+
 make_check_metric <- function(title, value, subtitle) {
   tags$div(
     class = "check-metric",
@@ -632,6 +669,7 @@ ui <- bslib::page_sidebar(
     actionButton("run_analysis", "Run analysis", class = "btn-primary"),
     downloadButton("download_clean_data", "Download cleaned CSV", class = "btn-outline-secondary"),
     helpText("Upload a file, review the Data check tab, then run the analysis. The analysis uses the cleaned data shown in the app."),
+    uiOutput("error_log_controls"),
     tags$div(style = "height: 0.5rem;"),
     downloadButton("download_outputs", "Download outputs (.zip)", class = "btn-primary"),
     tags$div(style = "height: 0.5rem;"),
@@ -752,6 +790,18 @@ ui <- bslib::page_sidebar(
       }
       .status-summary-list li {
         margin-bottom: 0.35rem;
+      }
+      .error-log-panel {
+        margin-top: 0.85rem;
+        padding: 0.85rem;
+        border-radius: 10px;
+        background: rgba(180, 35, 24, 0.07);
+        border: 1px solid rgba(180, 35, 24, 0.24);
+        border-left: 5px solid #b42318;
+      }
+      .error-log-panel .help-block {
+        margin: 0.35rem 0 0;
+        color: #5f1f18;
       }
       .workflow-steps {
         display: flex;
@@ -1104,6 +1154,26 @@ ui <- bslib::page_sidebar(
 server <- function(input, output, session) {
   analysis_data <- reactiveVal(NULL)
   input_check <- reactiveVal(NULL)
+  error_logs <- reactiveVal(character())
+
+  append_error_log <- function(stage, error, context = list()) {
+    log_text <- build_error_log_text(stage, error, context)
+    error_logs(c(error_logs(), log_text))
+  }
+
+  current_error_context <- function(extra = list()) {
+    check <- input_check()
+    uploaded <- input$trial_file
+    base_context <- list(
+      data_source = if (is.null(input$data_source)) "<not selected>" else input$data_source,
+      uploaded_file = if (is.null(uploaded) || is.null(uploaded$name)) "<none>" else uploaded$name,
+      alpha = if (is.null(input$alpha)) "<not set>" else input$alpha,
+      checked_source = if (is.null(check) || is.null(check$source_name)) "<none>" else check$source_name,
+      checked_rows = if (is.null(check)) "<none>" else nrow(check$trial),
+      checked_envs = if (is.null(check)) "<none>" else check$report$n_env
+    )
+    c(base_context, extra)
+  }
 
   chosen_input_path <- reactive({
     if (identical(input$data_source, "upload")) {
@@ -1138,6 +1208,11 @@ server <- function(input, output, session) {
         updateTabsetPanel(session, "main_tabs", selected = "Data check")
       }, error = function(e) {
         input_check(NULL)
+        append_error_log(
+          "Preparing bundled example data check",
+          e,
+          current_error_context(list(source_path = bundled_example_path))
+        )
         showNotification(conditionMessage(e), type = "error", duration = NULL)
       })
     } else if (is.null(input$trial_file)) {
@@ -1155,6 +1230,11 @@ server <- function(input, output, session) {
       showNotification("Data check complete. Review the Data check tab, then run the analysis.", type = "message", duration = 5)
     }, error = function(e) {
       input_check(NULL)
+      append_error_log(
+        "Preparing uploaded data check",
+        e,
+        current_error_context(list(source_path = input$trial_file$datapath))
+      )
       showNotification(conditionMessage(e), type = "error", duration = NULL)
     })
   }, ignoreInit = TRUE)
@@ -1192,9 +1272,32 @@ server <- function(input, output, session) {
       updateTabsetPanel(session, "main_tabs", selected = "Adjusted means")
       showNotification("Analysis complete.", type = "message", duration = 4)
     }, error = function(e) {
+      append_error_log("Running analysis", e, current_error_context())
       showNotification(conditionMessage(e), type = "error", duration = NULL)
     })
   })
+
+  output$error_log_controls <- renderUI({
+    logs <- error_logs()
+    if (!length(logs)) return(NULL)
+
+    tags$div(
+      class = "error-log-panel",
+      downloadButton("download_error_log", "Download error log", class = "btn-outline-danger"),
+      helpText("An error was recorded in this session. Download this log and send it with the CSV if the problem persists.")
+    )
+  })
+
+  output$download_error_log <- downloadHandler(
+    filename = function() {
+      paste0("sally-yield-analysis-error-log-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".txt")
+    },
+    content = function(file) {
+      logs <- error_logs()
+      req(length(logs) > 0)
+      writeLines(paste(logs, collapse = "\n\n---\n\n"), con = file, useBytes = TRUE)
+    }
+  )
 
   output$download_outputs <- downloadHandler(
     filename = function() {

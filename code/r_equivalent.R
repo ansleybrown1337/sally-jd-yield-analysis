@@ -729,6 +729,39 @@ stage2_single_env <- function(trial_df, env_id, alpha = 0.05) {
 # =========================================================
 # Stage 2A: one-stage MET BLUPs (entries random)
 # =========================================================
+extract_entry_blups <- function(fit, context = "BLUPs") {
+  re_plain <- tryCatch(
+    lme4::ranef(fit, condVar = FALSE)$entry,
+    error = function(e) {
+      warning(context, ": could not extract entry random effects: ", conditionMessage(e))
+      NULL
+    }
+  )
+
+  if (is.null(re_plain)) return(NULL)
+
+  blups_vec <- as.numeric(re_plain[, "(Intercept)"])
+  entry_ids <- rownames(re_plain)
+  se_vec <- rep(NA_real_, length(blups_vec))
+
+  re_cond <- tryCatch(
+    lme4::ranef(fit, condVar = TRUE)$entry,
+    error = function(e) {
+      warning(context, ": conditional BLUP SEs unavailable: ", conditionMessage(e))
+      NULL
+    }
+  )
+
+  if (!is.null(re_cond)) {
+    pv <- attr(re_cond, "postVar")
+    if (!is.null(pv)) {
+      se_vec <- sqrt(vapply(seq_len(dim(pv)[3]), function(i) pv[1, 1, i], numeric(1)))
+    }
+  }
+
+  data.frame(entry = entry_ids, BLUP = blups_vec, SE = se_vec)
+}
+
 stage2_blups <- function(trial_df) {
   df <- trial_df %>%
     dplyr::filter(!is.na(yield)) %>%
@@ -750,13 +783,8 @@ stage2_blups <- function(trial_df) {
     fit <- try(lme4::lmer(form, data = df, REML = TRUE), silent = TRUE)
 
     if (!inherits(fit, "try-error")) {
-      re <- ranef(fit, condVar = TRUE)$entry
-      blups_vec <- as.numeric(re[, "(Intercept)"])
-      entry_ids <- rownames(re)
-      pv <- attr(ranef(fit, condVar = TRUE)$entry, "postVar")
-      se_vec <- if (is.null(pv)) rep(NA_real_, length(blups_vec)) else
-        sqrt(vapply(seq_len(dim(pv)[3]), function(i) pv[1, 1, i], numeric(1)))
-      return(data.frame(entry = entry_ids, BLUP = blups_vec, SE = se_vec))
+      blups <- extract_entry_blups(fit, context = "BLUPs: single-environment lmer")
+      if (!is.null(blups)) return(blups)
     }
 
     warning("BLUPs: single-environment lmer failed. Falling back to lm().")
@@ -779,13 +807,8 @@ stage2_blups <- function(trial_df) {
   )
 
   if (!inherits(fit2, "try-error")) {
-    re <- ranef(fit2, condVar = TRUE)$entry
-    blups_vec <- as.numeric(re[, "(Intercept)"])
-    entry_ids <- rownames(re)
-    pv <- attr(ranef(fit2, condVar = TRUE)$entry, "postVar")
-    se_vec <- if (is.null(pv)) rep(NA_real_, length(blups_vec)) else
-      sqrt(vapply(seq_len(dim(pv)[3]), function(i) pv[1, 1, i], numeric(1)))
-    return(data.frame(entry = entry_ids, BLUP = blups_vec, SE = se_vec))
+    blups <- extract_entry_blups(fit2, context = "BLUPs: multi-environment lmer")
+    if (!is.null(blups)) return(blups)
   }
 
   warning("BLUPs: multi-environment lmer failed. Falling back to lm().")
