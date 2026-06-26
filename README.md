@@ -108,7 +108,7 @@ The implemented workflow has three main analytical components.
 
 Each environment, defined as a site year combination in `env`, is analyzed separately after dropping rows with missing yield values.
 
-The code attempts spatial mixed models first using `nlme::lme` with:
+The code attempts spatial mixed models first:
 
 - fixed effect: `yield ~ entry`
 - random effect: `~ 1 | rep`
@@ -118,12 +118,12 @@ The code attempts spatial mixed models first using `nlme::lme` with:
 
 Candidate covariance labels are:
 
-- `expa`
-- `exp`
-- `sph`
-- `gau`
+- `expa`: custom SAS-style anisotropic exponential covariance, `SP(EXPA)(row col)`
+- `exp`: `nlme::corExp(...)`
+- `sph`: `nlme::corSpher(...)`
+- `gau`: `nlme::corGaus(...)`
 
-Important implementation note: in the current R code, `expa` and `exp` are both mapped to `nlme::corExp(...)`. That means the present implementation does **not** yet fit a distinct anisotropic exponential model, even though that is part of the intended conceptual design.
+Implementation note: `expa` is intentionally not mapped to `nlme::corExp(...)`. It is fit by `code/expa_covariance.R`, which maximizes a REML likelihood using the SAS documented covariance form `sigma_e^2 * exp(-theta_row * |d_row|^power_row - theta_col * |d_col|^power_col)` plus a random rep intercept.
 
 For each environment, the workflow extracts:
 
@@ -270,7 +270,7 @@ Compared with a traditional per site GLM or MIXED workflow that emphasizes Fishe
 
 These points are especially important for anyone reusing or publishing from this workflow.
 
-- `expa` is currently only a label and is not distinct from `exp` in the present implementation.
+- The custom `expa` implementation is intended to mirror SAS `SP(EXPA)(row col)`, but it should be checked against SAS output when packages, optimizers, or covariance-parameter conventions change.
 - The code assumes a single random intercept for `rep` in Stage 1, with no explicit nested or crossed structure beyond the environment specific fits.
 - Confidence intervals and degrees of freedom come from standard approximations in `nlme`, `lme4`, and `emmeans`, and may be unstable in sparse or highly unbalanced settings.
 - The approximate LSD columns are convenience summaries, not the main inferential basis.
@@ -314,7 +314,7 @@ analyze_trial(
 
 The code and repository suggest the following near term priorities.
 
-- Implement a truly anisotropic spatial option if `expa` is meant to remain in the candidate set.
+- Continue validating the custom `expa` implementation against SAS examples, especially after updates to R, SAS, or deployment package versions.
 - Decide whether `LSD_0.30` should remain for legacy compatibility or move to a historical appendix only.
 - Continue refining the distinction between LS-means outputs and BLUP outputs in the user interface.
 - Review any remaining real-data artifacts before broader public distribution of the repository.

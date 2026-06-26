@@ -47,7 +47,7 @@ This report is a front end for the variety‑trial backend in `r_equivalent.R`. 
 The backend currently follows these rules:
 
 - **Stage 1, within each environment**
-  - Try spatial `nlme::lme` models with candidate covariance structures (`expa`, `exp`, `sph`, `gau`) and choose the best by AICc when at least one converges.
+  - Try the custom SAS-style `expa` model and spatial `nlme::lme` models (`exp`, `sph`, `gau`), then choose the best by AICc when at least one converges.
   - If all spatial fits fail, fall back to:
     - **RCBD** via `lme4::lmer(yield ~ entry + (1 | rep))` when there are at least two reps.
     - **Fixed‑effects ANOVA** via `lm(yield ~ entry)` when replication is inadequate or `lmer` fails.
@@ -275,7 +275,7 @@ if (!is.null(stage1_model_selection)) {
 
 Interpretation:
 
-- Spatial models (`expa`, `exp`, `sph`, `gau`) indicate successful fitting of a spatial `nlme` model.  
+- Spatial models (`expa`, `exp`, `sph`, `gau`) indicate successful fitting of the custom EXPA model or a spatial `nlme` model.  
 - `none_rcbd` indicates that all spatial fits failed and a randomized complete block design model (`lmer`) was used.  
 - `none_lm` indicates a further fallback to fixed‑effects ANOVA (`lm`) when replication or convergence was insufficient for random block effects.
 
@@ -353,10 +353,10 @@ Interpretation:
 if (!is.null(cv_by_env)) {
 
   cv_show <- cv_by_env %>%
-    select(env, n_used, mean_y, rmse, cv_pct, cov_selected)
+    select(any_of(c("env", "n_used", "mean_y", "rmse", "cv_pct", "rmse_model", "cv_model_pct", "cov_selected")))
 
   kable(cv_show,
-        caption = "Stage 1 CV by environment (computed from Stage 1 residual RMSE and mean yield)") %>%
+        caption = "Stage 1 CV by environment (fitted residual RMSE/CV plus model residual RMSE/CV when available)") %>%
     kable_styling(full_width = FALSE)
 
 } else {

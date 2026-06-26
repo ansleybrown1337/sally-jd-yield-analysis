@@ -199,8 +199,10 @@ This file supports quality control at the plot level. It is the source for resid
 | `cov_selected` | Selected covariance or fallback label used in that environment. |
 | `n_used` | Number of non-missing plots used in modeling. |
 | `mean_y` | Mean observed yield for the environment. |
-| `rmse` | Root mean squared residual error. |
+| `rmse` | Root mean squared fitted residual error from the plot-level diagnostics. |
 | `cv_pct` | Percent CV, computed as `100 * rmse / mean_y` when possible. |
+| `rmse_model` | Model-based residual scale estimate when available, such as the spatial residual standard deviation for EXPA or `sigma()` for R model objects. |
+| `cv_model_pct` | Percent CV computed as `100 * rmse_model / mean_y` when possible. |
 
 **Interpretation:**
 This is a compact environment-level diagnostics table. Lower RMSE and CV generally indicate tighter fit relative to the scale of the response, though interpretation should always be contextualized by trial type, trait scale, and design quality. This file is useful for identifying unusually noisy environments and for comparing residual performance across selected covariance structures. fileciteturn4file0turn4file11

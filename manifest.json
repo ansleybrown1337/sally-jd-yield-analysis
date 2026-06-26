@@ -3146,8 +3146,11 @@
     "code/aj_stats.sas": {
       "checksum": "9c91bf9c8ed81886ea6ef6f7676a2b0e"
     },
+    "code/expa_covariance.R": {
+      "checksum": "5d1029bb7c86c1a6c08922ef2599d40f"
+    },
     "code/r_equivalent.R": {
-      "checksum": "bfba347d93b3e8ba6e514208ad444222"
+      "checksum": "454c125ec17960f24140cc62c1395b79"
     },
     "code/sim_data.r": {
       "checksum": "3207a28b08e8e75956f19369d4593401"
@@ -3159,16 +3162,16 @@
       "checksum": "33dfd1d6d908eba8ff2b34bed8bdecca"
     },
     "code/variety_trial_frontend.Rmd": {
-      "checksum": "fda6f9870a91ca1b92a1a7cfcdc2a2ba"
+      "checksum": "0925177793e3d0b731c9ad985d6f2f2b"
     },
     "LICENSE": {
       "checksum": "369e3ae3f0956a0ef75eea0f516f47ff"
     },
     "output_interpretation.md": {
-      "checksum": "96c5537fde746f0253eebf5dbecb376f"
+      "checksum": "f3f7e4df884f82c7902a13b6a7b79847"
     },
     "README.md": {
-      "checksum": "7394268a8383023e219c2956128efeaa"
+      "checksum": "7cf6c25d487cb39b35e8bc9941d636f7"
     },
     "real_data/MilletVT2025.csv": {
       "checksum": "f619aea98a817b04612fd9cf143f7803"

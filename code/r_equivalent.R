@@ -16,7 +16,7 @@
 #   run_report.txt              - run audit trail
 #
 # Notes:
-#   - Stage 1 attempts spatial nlme::lme fits for each environment and chooses by AICc.
+#   - Stage 1 attempts a custom SAS-style EXPA fit plus nlme spatial fits for each environment and chooses by AICc.
 #   - If all spatial fits fail in an environment, falls back to RCBD (lmer) or lm.
 #   - Stage 2B uses inverse-variance meta-analysis across environments when possible.
 #   - If only one environment contributes usable Stage 1 LS-means, Stage 2B is computed
@@ -38,9 +38,16 @@ suppressPackageStartupMessages({
 })
 
 alpha   <- 0.05
-covlist <- c("expa","exp","sph","gau")  # exp(a) placeholder, exp, spherical, Gaussian
+covlist <- c("expa","exp","sph","gau")
 required_trial_cols <- c("site", "year", "env", "rep", "row", "col", "entry", "yield")
 missing_value_tokens <- c("", "NA", "N/A", "NULL", "null", ".")
+
+expa_helper_candidates <- c(file.path("code", "expa_covariance.R"), "expa_covariance.R")
+expa_helper_path <- expa_helper_candidates[file.exists(expa_helper_candidates)][1]
+if (is.na(expa_helper_path)) {
+  stop("Could not find code/expa_covariance.R, which is required for the EXPA spatial model.")
+}
+source(expa_helper_path)
 
 # =========================================================
 # Helper: input cleanup and validation
@@ -167,9 +174,7 @@ clean_trial_data <- function(trial_df) {
 # =========================================================
 make_cor <- function(type, row, col) {
   # row/col are used in the calling scope; keep signature stable
-  if (type == "expa") {
-    corExp(form = ~ row + col, nugget = TRUE)
-  } else if (type == "exp") {
+  if (type == "exp") {
     corExp(form = ~ row + col, nugget = TRUE)
   } else if (type == "sph") {
     corSpher(form = ~ row + col, nugget = TRUE)
@@ -188,6 +193,114 @@ AICc_nlme <- function(fit) {
   n     <- nobs(fit)
   AIC_v <- AIC(fit)
   AIC_v + (2 * k_tot * (k_tot + 1)) / (n - k_tot - 1)
+}
+
+spatial_fit_aicc <- function(fit) {
+  if (inherits(fit, "expa_reml_fit")) return(fit$AICc)
+  AICc_nlme(fit)
+}
+
+spatial_fit_selection_row <- function(fit, env, cov_name) {
+  if (is.null(fit)) {
+    return(tibble::tibble(
+      env = env, cov = cov_name,
+      engine = if (cov_name == "expa") "custom::sas_sp_expa_reml" else "nlme::lme",
+      converged = FALSE, n = NA_integer_, k = NA_integer_,
+      logLik = NA_real_, AIC = NA_real_, AICc = NA_real_, BIC = NA_real_,
+      best = FALSE
+    ))
+  }
+
+  if (inherits(fit, "expa_reml_fit")) {
+    return(tibble::tibble(
+      env = env, cov = cov_name, engine = fit$engine,
+      converged = fit$converged, n = fit$n, k = fit$k,
+      logLik = fit$logLik, AIC = fit$AIC, AICc = fit$AICc, BIC = fit$BIC,
+      best = FALSE
+    ))
+  }
+
+  k_tot <- attr(logLik(fit), "df")
+  n_obs <- nobs(fit)
+  tibble::tibble(
+    env = env, cov = cov_name, engine = "nlme::lme",
+    converged = TRUE, n = n_obs, k = k_tot,
+    logLik = as.numeric(logLik(fit)), AIC = AIC(fit), AICc = AICc_nlme(fit), BIC = BIC(fit),
+    best = FALSE
+  )
+}
+
+spatial_fit_lsm <- function(fit, alpha = 0.05) {
+  if (inherits(fit, "expa_reml_fit")) {
+    return(fit$lsm %>%
+      dplyr::select(entry, estimate, stderr, df, lower.CL, upper.CL))
+  }
+  lsm_from_fit(fit, alpha = alpha)
+}
+
+spatial_fit_spec <- function(fit, env, best_type) {
+  if (inherits(fit, "expa_reml_fit")) {
+    p <- fit$params
+    residual <- paste0(
+      "SAS-style SP(EXPA): sigma_e^2 * exp(-theta_row*|d_row|^power_row - theta_col*|d_col|^power_col); ",
+      "theta_row=", signif(p[["theta_row"]], 4),
+      ", theta_col=", signif(p[["theta_col"]], 4),
+      ", power_row=", signif(p[["power_row"]], 4),
+      ", power_col=", signif(p[["power_col"]], 4)
+    )
+    return(tibble::tibble(
+      env = env,
+      stage = "stage1",
+      engine = fit$engine,
+      fixed = "yield ~ entry",
+      random = "rep random intercept",
+      residual = residual,
+      method = "REML",
+      cov_selected = best_type
+    ))
+  }
+
+  tibble::tibble(
+    env = env,
+    stage = "stage1",
+    engine = "nlme::lme",
+    fixed = "yield ~ entry",
+    random = "~ 1 | rep",
+    residual = paste0("correlation = ", best_type, " (nlme cor*; nugget=TRUE)"),
+    method = "REML",
+    cov_selected = best_type
+  )
+}
+
+spatial_fit_diagnostics <- function(fit, df_env) {
+  if (inherits(fit, "expa_reml_fit")) {
+    return(df_env %>%
+      dplyr::mutate(
+        fitted = as.numeric(fit$fitted),
+        resid = as.numeric(fit$resid),
+        resid_norm = as.numeric(fit$resid_norm),
+        resid_kind = "whitened marginal residual (custom EXPA)",
+        flag_outlier = abs(resid_norm) > 3
+      ) %>%
+      dplyr::select(env, site, year, rep, row, col, entry, yield,
+                    fitted, resid, resid_norm, resid_kind, flag_outlier))
+  }
+
+  df_env %>%
+    dplyr::mutate(
+      fitted = as.numeric(fitted(fit)),
+      resid = as.numeric(residuals(fit, type = "response")),
+      resid_norm = as.numeric(residuals(fit, type = "normalized")),
+      resid_kind = "normalized (nlme)",
+      flag_outlier = abs(resid_norm) > 3
+    ) %>%
+    dplyr::select(env, site, year, rep, row, col, entry, yield,
+                  fitted, resid, resid_norm, resid_kind, flag_outlier)
+}
+
+spatial_fit_residual_sigma <- function(fit) {
+  if (inherits(fit, "expa_reml_fit")) return(unname(fit$params[["sigma_e"]]))
+  tryCatch(as.numeric(sigma(fit)), error = function(e) NA_real_)
 }
 
 standardize_emmeans_summary <- function(df) {
@@ -230,7 +343,7 @@ lsm_from_fit <- function(fit, alpha = 0.05) {
 # =========================================================
 # Stage 1 helpers: nlme spatial fits per environment
 # =========================================================
-fit_one_env_spatial <- function(df_env, type) {
+fit_one_env_spatial <- function(df_env, type, alpha = 0.05) {
   df_env <- df_env %>%
     dplyr::filter(!is.na(yield)) %>%
     dplyr::mutate(
@@ -239,6 +352,12 @@ fit_one_env_spatial <- function(df_env, type) {
     )
 
   if (nrow(df_env) == 0L) return(NULL)
+
+  if (type == "expa") {
+    fit <- try(fit_expa_reml(df_env, alpha = alpha), silent = TRUE)
+    if (inherits(fit, "try-error")) return(NULL)
+    return(fit)
+  }
 
   cor_struct <- make_cor(type, df_env$row, df_env$col)
 
@@ -290,47 +409,28 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
     }
 
     # -----------------------------------------------------
-    # 1) Try spatial nlme models for this environment
+    # 1) Try spatial models for this environment
     # -----------------------------------------------------
-    fits <- purrr::map(covlist, ~ fit_one_env_spatial(df_env, .x))
+    fits <- purrr::map(covlist, ~ fit_one_env_spatial(df_env, .x, alpha = alpha))
     names(fits) <- covlist
 
     # Collect full model-selection diagnostics (including failures)
     sel_rows <- purrr::imap_dfr(fits, function(fit, cov_name) {
-      if (is.null(fit)) {
-        return(tibble::tibble(
-          env = this_env, cov = cov_name, engine = "nlme::lme",
-          converged = FALSE, n = NA_integer_, k = NA_integer_,
-          logLik = NA_real_, AIC = NA_real_, AICc = NA_real_, BIC = NA_real_,
-          best = FALSE
-        ))
-      }
-      k_tot <- attr(logLik(fit), "df")
-      n_obs <- nobs(fit)
-      ll    <- as.numeric(logLik(fit))
-      aic   <- AIC(fit)
-      bic   <- BIC(fit)
-      aicc  <- AICc_nlme(fit)
-      tibble::tibble(
-        env = this_env, cov = cov_name, engine = "nlme::lme",
-        converged = TRUE, n = n_obs, k = k_tot,
-        logLik = ll, AIC = aic, AICc = aicc, BIC = bic,
-        best = FALSE
-      )
+      spatial_fit_selection_row(fit, this_env, cov_name)
     })
 
     ok_idx  <- !purrr::map_lgl(fits, is.null)
     fits_ok <- fits[ok_idx]
 
     if (length(fits_ok) > 0L) {
-      aicc <- purrr::map_dbl(fits_ok, AICc_nlme)
+      aicc <- purrr::map_dbl(fits_ok, spatial_fit_aicc)
       best_type <- names(which.min(aicc))
       best_fit  <- fits_ok[[best_type]]
 
       sel_rows <- sel_rows %>%
         dplyr::mutate(best = (cov == best_type) & converged)
 
-      lsm <- lsm_from_fit(best_fit, alpha = alpha) %>%
+      lsm <- spatial_fit_lsm(best_fit, alpha = alpha) %>%
         dplyr::mutate(env = this_env, cov = best_type) %>%
         dplyr::select(env, cov, entry, estimate, stderr, df, lower.CL, upper.CL)
 
@@ -342,27 +442,9 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
         best_AICc = min(aicc)
       )
 
-      spec_list[[i]] <- tibble::tibble(
-        env        = this_env,
-        stage      = "stage1",
-        engine     = "nlme::lme",
-        fixed      = "yield ~ entry",
-        random     = "~ 1 | rep",
-        residual   = paste0("correlation = ", best_type, " (nlme cor*; nugget=TRUE)"),
-        method     = "REML",
-        cov_selected = best_type
-      )
+      spec_list[[i]] <- spatial_fit_spec(best_fit, this_env, best_type)
 
-      diag_df <- df_env %>%
-        dplyr::mutate(
-          fitted     = as.numeric(fitted(best_fit)),
-          resid      = as.numeric(residuals(best_fit, type = "response")),
-          resid_norm = as.numeric(residuals(best_fit, type = "normalized")),
-          resid_kind = "normalized (nlme)",
-          flag_outlier = abs(resid_norm) > 3
-        ) %>%
-        dplyr::select(env, site, year, rep, row, col, entry, yield,
-                      fitted, resid, resid_norm, resid_kind, flag_outlier)
+      diag_df <- spatial_fit_diagnostics(best_fit, df_env)
 
       diag_list[[i]] <- diag_df
 
@@ -370,6 +452,8 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
       rmse   <- sqrt(mean(diag_df$resid^2, na.rm = TRUE))
       mean_y <- mean(diag_df$yield, na.rm = TRUE)
       cv_pct <- if (is.finite(mean_y) && mean_y != 0) 100 * rmse / mean_y else NA_real_
+      rmse_model <- spatial_fit_residual_sigma(best_fit)
+      cv_model_pct <- if (is.finite(mean_y) && mean_y != 0) 100 * rmse_model / mean_y else NA_real_
 
       cv_list[[i]] <- tibble::tibble(
         env          = this_env,
@@ -377,7 +461,9 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
         n_used       = sum(!is.na(diag_df$yield)),
         mean_y       = mean_y,
         rmse         = rmse,
-        cv_pct       = cv_pct
+        cv_pct       = cv_pct,
+        rmse_model   = rmse_model,
+        cv_model_pct = cv_model_pct
       )
 
       sel_all_list[[i]] <- sel_rows
@@ -450,6 +536,8 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
         rmse   <- sqrt(mean(diag_df$resid^2, na.rm = TRUE))
         mean_y <- mean(diag_df$yield, na.rm = TRUE)
         cv_pct <- if (is.finite(mean_y) && mean_y != 0) 100 * rmse / mean_y else NA_real_
+        rmse_model <- tryCatch(as.numeric(sigma(rcbd_fit)), error = function(e) NA_real_)
+        cv_model_pct <- if (is.finite(mean_y) && mean_y != 0) 100 * rmse_model / mean_y else NA_real_
 
         cv_list[[i]] <- tibble::tibble(
           env          = this_env,
@@ -457,7 +545,9 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
           n_used       = sum(!is.na(diag_df$yield)),
           mean_y       = mean_y,
           rmse         = rmse,
-          cv_pct       = cv_pct
+          cv_pct       = cv_pct,
+          rmse_model   = rmse_model,
+          cv_model_pct = cv_model_pct
         )
 
         sel_rows <- sel_rows %>% dplyr::mutate(best = FALSE)
@@ -530,6 +620,8 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
     rmse   <- sqrt(mean(diag_df$resid^2, na.rm = TRUE))
     mean_y <- mean(diag_df$yield, na.rm = TRUE)
     cv_pct <- if (is.finite(mean_y) && mean_y != 0) 100 * rmse / mean_y else NA_real_
+    rmse_model <- tryCatch(as.numeric(sigma(lm_fit)), error = function(e) NA_real_)
+    cv_model_pct <- if (is.finite(mean_y) && mean_y != 0) 100 * rmse_model / mean_y else NA_real_
 
     cv_list[[i]] <- tibble::tibble(
       env          = this_env,
@@ -537,7 +629,9 @@ analyze_stage1 <- function(trial_df, covlist, alpha = 0.05) {
       n_used       = sum(!is.na(diag_df$yield)),
       mean_y       = mean_y,
       rmse         = rmse,
-      cv_pct       = cv_pct
+      cv_pct       = cv_pct,
+      rmse_model   = rmse_model,
+      cv_model_pct = cv_model_pct
     )
 
     sel_rows <- sel_rows %>% dplyr::mutate(best = FALSE)
@@ -978,7 +1072,7 @@ analyze_trial <- function(in_csv = SIM_IN_CSV, out_dir = SIM_OUT_DIR, alpha = 0.
     "  Explicit model specs written to: model_specs_stage1.csv",
     "  Full model-selection table written to: stage1_model_selection.csv",
     "  Plot-level diagnostics written to: diagnostics_stage1.csv",
-    "  CV summary written to: cv_by_env.csv",
+    "  CV summary written to: cv_by_env.csv (residual RMSE/CV plus model residual RMSE/CV when available)",
     paste("  Environments using spatial covariance (expa/exp/sph/gau):", n_spatial),
     paste("  Environments using RCBD fallback (none_rcbd):", n_rcbd),
     paste("  Environments using fixed-effects ANOVA fallback (none_lm):", n_lm),
@@ -1013,7 +1107,7 @@ analyze_trial <- function(in_csv = SIM_IN_CSV, out_dir = SIM_OUT_DIR, alpha = 0.
     "Key modeling assumptions and rules:",
     "  • Rows with NA yield are excluded from all model fitting.",
     "  • Entry is always treated as a factor.",
-    "  • Stage 1 prefers spatial nlme models; if all spatial fits fail for an environment, the model falls back to RCBD (lmer) or, if that fails or reps are insufficient, to fixed-effects ANOVA (lm).",
+    "  • Stage 1 prefers the custom SAS-style EXPA fit plus nlme spatial models; if all spatial fits fail for an environment, the model falls back to RCBD (lmer) or, if that fails or reps are insufficient, to fixed-effects ANOVA (lm).",
     "  • Stage 2 meta-analysis is only meaningful when ≥ 2 environments are present; with a single environment, across-env meta is skipped and within-env LS-means + Tukey CLD are used instead.",
     "  • BLUPs treat entry as random and, when possible, include env and env:rep random effects; if mixed models fail to converge, the code falls back to lm(yield ~ entry) and uses emmeans to summarize entry effects.",
     "  • Confidence intervals and p-values follow standard approximations from nlme/lme4/emmeans and may be unstable when degrees of freedom are small or designs are highly unbalanced."
