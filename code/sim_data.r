@@ -25,7 +25,7 @@ cfg <- list(
   entry_sd    = 250,          # SD for entry main-effect deviations
   # GxE (entry × environment) random effects
   gxe_sd      = 200,          # SD for GxE deviations
-  # missingness: each env drops this fraction of entries at random
+  # missingness: each env has this fraction of plot yields missing at random
   frac_missing_per_env = 0.20,
   # harvesting only central sub-plot? (kept here for future; grid still full)
   # output control
@@ -91,14 +91,13 @@ assign_entries_rcbd <- function(nrow, ncol, reps, entries) {
   layout[order(layout$row, layout$col), ]
 }
 
-# Introduce missing entries per environment by removing all plots
-mask_entries_by_env <- function(df_env, frac_missing, all_entries) {
+# Introduce missing harvested plots per environment while preserving layout rows
+mark_missing_yields_by_env <- function(df_env, frac_missing) {
   if (frac_missing <= 0) return(df_env)
-  n_drop <- floor(length(all_entries) * frac_missing)
-  drop_set <- if (n_drop > 0) sort(sample(all_entries, n_drop)) else integer(0)
-  out <- subset(df_env, !(entry %in% drop_set))
-  attr(out, "dropped_entries") <- drop_set
-  out
+  n_missing <- floor(nrow(df_env) * frac_missing)
+  missing_rows <- if (n_missing > 0) sort(sample(seq_len(nrow(df_env)), n_missing)) else integer(0)
+  attr(df_env, "missing_yield_rows") <- missing_rows
+  df_env
 }
 
 # ---- Simulation driver ----
@@ -118,7 +117,7 @@ simulate_trial <- function(cfg) {
 
   # container
   out <- vector("list", length = nrow(envs))
-  meta_drops <- list()
+  meta_missing <- list()
 
   for (i in seq_len(nrow(envs))) {
     env <- envs$env[i]
@@ -133,9 +132,10 @@ simulate_trial <- function(cfg) {
     # RCBD layout and entry assignment
     lay <- assign_entries_rcbd(cfg$nrow, cfg$ncol, cfg$reps, entry_ids)
 
-    # potentially drop some entries from this env
-    lay_env <- mask_entries_by_env(lay, cfg$frac_missing_per_env, entry_ids)
-    meta_drops[[env]] <- attr(lay_env, "dropped_entries")
+    # potentially mark some harvested plot yields as missing
+    lay_env <- mark_missing_yields_by_env(lay, cfg$frac_missing_per_env)
+    missing_rows <- attr(lay_env, "missing_yield_rows")
+    meta_missing[[env]] <- missing_rows
 
     # merge spatial field onto layout
     lay_env$plot_id <- seq_len(nrow(lay_env))
@@ -155,6 +155,9 @@ simulate_trial <- function(cfg) {
 
     # observed yield
     y <- as.numeric(mu + eps)
+    if (length(missing_rows) > 0L) {
+      y[missing_rows] <- NA_real_
+    }
 
     df <- data.frame(
       site  = envs$site[i],
@@ -172,7 +175,7 @@ simulate_trial <- function(cfg) {
   trial <- do.call(rbind, out)
   attr(trial, "entry_truth") <- data.frame(entry = entry_ids,
                                            effect = entry_effect)
-  attr(trial, "drops_by_env") <- meta_drops
+  attr(trial, "missing_rows_by_env") <- meta_missing
   trial
 }
 
@@ -196,12 +199,12 @@ if (isTRUE(cfg$make_csv)) {
 truth_entry <- attr(trial, "entry_truth")
 write.csv(truth_entry, "sim_data/entry_truth.csv", row.names = FALSE)
 
-drops <- attr(trial, "drops_by_env")
+drops <- attr(trial, "missing_rows_by_env")
 # write a simple log
-con <- file("sim_data/env_missing_entries.log", open = "wt")
+con <- file("sim_data/env_missing_yields.log", open = "wt")
 on.exit(close(con), add = TRUE)
 for (nm in names(drops)) {
-  cat(nm, ": dropped entries -> ",
+  cat(nm, ": missing yield row indices -> ",
       if (length(drops[[nm]]) == 0) "none" else paste(drops[[nm]], collapse = ","),
       "\n", file = con)
 }

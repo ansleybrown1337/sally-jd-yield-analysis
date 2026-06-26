@@ -112,12 +112,29 @@ make_check_metric <- function(title, value, subtitle) {
   )
 }
 
+format_count_pct <- function(count, denominator) {
+  pct <- if (is.finite(denominator) && denominator > 0) {
+    sprintf("%.1f%%", 100 * count / denominator)
+  } else {
+    "NA%"
+  }
+  paste0(count, " (", pct, ")")
+}
+
 build_data_check_summary <- function(check) {
   if (is.null(check)) {
     return(tags$p("Upload a CSV to run the data check before analysis."))
   }
 
   report <- check$report
+  blank_rows_detail <- paste0(
+    format_count_pct(report$blank_rows_dropped, report$raw_n_rows),
+    " fully blank row(s) dropped"
+  )
+  missing_yield_detail <- paste0(
+    format_count_pct(report$rows_excluded_from_model, report$cleaned_n_rows),
+    " row(s) excluded because yield is missing"
+  )
   extra_note <- if (report$extra_cols_ignored > 0L) {
     paste0(
       report$extra_cols_ignored,
@@ -148,7 +165,7 @@ build_data_check_summary <- function(check) {
       make_check_metric(
         "Rows",
         paste0(report$raw_n_rows, " -> ", report$cleaned_n_rows),
-        paste0(report$blank_rows_dropped, " fully blank row(s) dropped")
+        blank_rows_detail
       ),
       make_check_metric(
         "Columns",
@@ -158,7 +175,7 @@ build_data_check_summary <- function(check) {
       make_check_metric(
         "Model rows",
         report$cleaned_n_rows - report$rows_excluded_from_model,
-        paste0(report$rows_excluded_from_model, " row(s) excluded because yield is missing")
+        missing_yield_detail
       ),
       make_check_metric(
         "Environments",
@@ -175,6 +192,14 @@ build_data_check_actions <- function(check) {
   }
 
   report <- check$report
+  blank_rows_detail <- paste0(
+    format_count_pct(report$blank_rows_dropped, report$raw_n_rows),
+    " fully blank row(s) dropped."
+  )
+  missing_yield_detail <- paste0(
+    format_count_pct(report$yield_missing, report$cleaned_n_rows),
+    " cleaned row(s) have missing yield and will not be modeled."
+  )
   action_rows <- tibble::tibble(
     check = c(
       "Required columns",
@@ -196,7 +221,7 @@ build_data_check_actions <- function(check) {
     ),
     detail = c(
       paste(required_cols, collapse = ", "),
-      paste0(report$blank_rows_dropped, " fully blank row(s) dropped."),
+      blank_rows_detail,
       if (report$extra_cols_ignored > 0L) {
         paste0(
           report$extra_cols_ignored,
@@ -210,7 +235,7 @@ build_data_check_actions <- function(check) {
       } else {
         "No extra columns found."
       },
-      paste0(report$yield_missing, " cleaned row(s) have missing yield and will not be modeled."),
+      missing_yield_detail,
       paste0(report$row_conversion_na, " value(s) became NA when row was converted to numeric."),
       paste0(report$col_conversion_na, " value(s) became NA when col was converted to numeric."),
       paste0(report$yield_conversion_na, " value(s) became NA when yield was converted to numeric.")
@@ -685,7 +710,7 @@ ui <- bslib::page_sidebar(
         tags$div(class = "sidebar-stat-value", "trial_sim.csv"),
         tags$div(
           class = "sidebar-stat-subtitle",
-          "Simulated yield trial with 6 site-years, 20 entries, 4 reps per environment, spatial field variation, and about 20% of entries missing within each environment."
+          "Simulated yield trial with 6 site-years, 20 entries, 4 reps per environment, spatial field variation, and 20% of plot yields missing within each environment."
         )
       )
     ),

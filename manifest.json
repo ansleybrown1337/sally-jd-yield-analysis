@@ -3141,7 +3141,7 @@
       "checksum": "dcb240655dcbf79b8706d11c8c2a169c"
     },
     "app.R": {
-      "checksum": "a78f9b40cab156d74619c3807e61ea80"
+      "checksum": "dbc7895f77e918a06152f43179490d39"
     },
     "code/aj_stats.sas": {
       "checksum": "9c91bf9c8ed81886ea6ef6f7676a2b0e"
@@ -3153,7 +3153,7 @@
       "checksum": "454c125ec17960f24140cc62c1395b79"
     },
     "code/sim_data.r": {
-      "checksum": "3207a28b08e8e75956f19369d4593401"
+      "checksum": "782f9ef53bcb5a469b30da1f99022d0b"
     },
     "code/validation.html": {
       "checksum": "65e066d1963e2eb581e95d71154e8ba7"
@@ -3218,11 +3218,11 @@
     "sim_data/entry_truth.csv": {
       "checksum": "edb29048b43fefa25a3e602ff18ce6cb"
     },
-    "sim_data/env_missing_entries.log": {
-      "checksum": "5dc70e88ada985ff8e8d7727aec97e94"
+    "sim_data/env_missing_yields.log": {
+      "checksum": "a62a12374cc2c2c7b362a60b0859ce93"
     },
     "sim_data/trial_sim.csv": {
-      "checksum": "c5f3100f1197fc7e99ac2028419b5aea"
+      "checksum": "15e4362f1ef609663a03516620cca537"
     },
     "sim_output/cld_across.csv": {
       "checksum": "5f967c1d89b69c309257cd6f88d8799b"
